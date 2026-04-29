@@ -1,64 +1,184 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useCallback } from 'react';
+import UploadZone from './components/UploadZone';
+import ProcessingView from './components/ProgressOverlay';
+import StudySheet from './components/StudySheet';
+import SessionHistory from './components/SessionHistory';
+import { useProcessor } from './hooks/useUpload';
+import { fetchSession } from './services/api';
+import { SessionData } from './types/session';
+
+/**
+ * Maps a session DB status/failedAt to the exact pipeline step key
+ * that needs to run next. Used to highlight completed steps and
+ * pass the resume target to resumeSession().
+ */
+function getNextStep(session: SessionData): string {
+  if (session.failedAt) {
+    const map: Record<string, string> = {
+      extract:    'extracting',
+      transcribe: 'transcribing',
+      summarize:  'summarizing',
+    };
+    return map[session.failedAt] ?? session.failedAt;
+  }
+  const statusMap: Record<string, string> = {
+    uploaded:   'extracting',
+    extracted:  'transcribing',
+    transcribed:'summarizing',
+  };
+  return statusMap[session.status] ?? 'extracting';
+}
 
 export default function Home() {
+  const processor = useProcessor();
+  const [viewingSession, setViewingSession] = useState<SessionData | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const isProcessing =
+    processor.step !== 'idle' &&
+    processor.step !== 'done' &&
+    processor.step !== 'error';
+
+  const showUpload    = processor.step === 'idle' && !viewingSession;
+  const showSheet     = viewingSession?.status === 'summarized';
+  const showIncomplete = viewingSession && viewingSession.status !== 'summarized';
+  const showProcessing = !viewingSession && processor.step !== 'idle';
+  const showDone       = !viewingSession && processor.step === 'done';
+
+  /* ── file upload flow ──────────────────────────────── */
+  const handleFileSelected = useCallback((file: File) => {
+    setViewingSession(null);
+    processor.startProcessing(file).then(() => {
+      setRefreshTrigger(p => p + 1);
+    });
+  }, [processor]);
+
+  /* ── select session from history ──────────────────── */
+  const handleSessionSelect = useCallback(async (id: string) => {
+    try {
+      processor.reset();
+      const session = await fetchSession(id);
+      setViewingSession(session);
+    } catch {
+      console.error('Failed to load session');
+    }
+  }, [processor]);
+
+  /* ── back / reset ──────────────────────────────────── */
+  const handleBack = useCallback(() => {
+    setViewingSession(null);
+    processor.reset();
+    setRefreshTrigger(p => p + 1);
+  }, [processor]);
+
+  /* ── view full sheet after processing finishes ─────── */
+  const handleViewSheet = useCallback(async () => {
+    if (!processor.sessionId) return;
+    const session = await fetchSession(processor.sessionId);
+    setViewingSession(session);
+    processor.reset();
+  }, [processor]);
+
+  /**
+   * Resume an incomplete session directly from the session object.
+   * Passes the session ID immediately to avoid stale-closure issues.
+   */
+  const handleResume = useCallback((fromStep: string) => {
+    if (!viewingSession) return;
+    const session = viewingSession;
+    setViewingSession(null); // hide incomplete view, show live processing
+    processor.resumeSession(session._id, fromStep, {
+      transcript: session.transcript,
+      title:      session.title,
+      summary:    session.summary,
+      keyPoints:  session.keyPoints,
+    }).then(() => {
+      setRefreshTrigger(p => p + 1);
+    });
+  }, [viewingSession, processor]);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <div className="app-layout">
+      <SessionHistory onSelect={handleSessionSelect} refreshTrigger={refreshTrigger} />
+
+      <main className="main-content" id="main-content">
+        <header className="app-header no-print">
+          <div className="header-glow" />
+          <h1 className="app-title">ملخّص المحاضرات</h1>
+          <p className="app-subtitle">ارفع ملف صوتي أو مرئي وسنحوّله لملخص منظم بالذكاء الاصطناعي</p>
+        </header>
+
+        {/* 1. Completed session — full study sheet */}
+        {showSheet && viewingSession ? (
+          <StudySheet data={viewingSession} onBack={handleBack} />
+
+        /* 2. Incomplete session from history — show checkpoint + resume */
+        ) : showIncomplete && viewingSession ? (
+          <div className="incomplete-session">
+            <ProcessingView
+              step="idle"
+              failedAtStep={getNextStep(viewingSession)}
+              transcript={viewingSession.transcript}
+              title={viewingSession.title}
+              summary={viewingSession.summary}
+              keyPoints={viewingSession.keyPoints}
+              errorMessage="توقفت المعالجة — اضغط متابعة لإكمالها"
+              onRetry={handleResume}
+              onReset={handleBack}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+          </div>
+
+        /* 3. Active processing — live step view */
+        ) : showProcessing ? (
+          <ProcessingView
+            step={processor.step}
+            transcript={processor.transcript}
+            title={processor.title}
+            summary={processor.summary}
+            keyPoints={processor.keyPoints}
+            errorMessage={processor.errorMessage}
+            onRetry={(fromStep) =>
+              processor.resumeSession(processor.sessionId, fromStep, {
+                transcript: processor.transcript,
+                title:      processor.title,
+                summary:    processor.summary,
+                keyPoints:  processor.keyPoints,
+              })
+            }
+            onReset={handleBack}
+          />
+
+        /* 4. Processing finished — show results + action buttons */
+        ) : showDone ? (
+          <div className="done-container">
+            <ProcessingView
+              step={processor.step}
+              transcript={processor.transcript}
+              title={processor.title}
+              summary={processor.summary}
+              keyPoints={processor.keyPoints}
+              errorMessage=""
+              onRetry={() => {}}
+              onReset={handleBack}
+            />
+            <div className="done-actions">
+              <button className="action-btn print-btn" onClick={handleViewSheet}>
+                عرض الملخص الكامل
+              </button>
+              <button className="action-btn back-btn" onClick={handleBack}>
+                رفع ملف جديد
+              </button>
+            </div>
+          </div>
+
+        /* 5. Default — upload zone */
+        ) : showUpload ? (
+          <div className="upload-container">
+            <UploadZone onFileSelected={handleFileSelected} disabled={isProcessing} />
+          </div>
+        ) : null}
       </main>
     </div>
   );
