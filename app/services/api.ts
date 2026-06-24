@@ -64,3 +64,18 @@ export async function deleteSession(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/sessions/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete session');
 }
+
+/** Update transcript text */
+export async function updateTranscript(id: string, transcript: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/sessions/${id}/transcript`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transcript }),
+  });
+  if (!res.ok) throw new Error('Failed to update transcript');
+}
+
+/** Get audio stream URL for a session */
+export function getAudioUrl(id: string): string {
+  return `${API_BASE}/api/sessions/${id}/audio`;
+}

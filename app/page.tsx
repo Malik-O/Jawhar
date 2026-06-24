@@ -56,15 +56,6 @@ export default function Home() {
   }, [processor]);
 
   /* ── select session from history ──────────────────── */
-  const handleSessionSelect = useCallback(async (id: string) => {
-    try {
-      processor.reset();
-      const session = await fetchSession(id);
-      setViewingSession(session);
-    } catch {
-      console.error('Failed to load session');
-    }
-  }, [processor]);
 
   /* ── back / reset ──────────────────────────────────── */
   const handleBack = useCallback(() => {
@@ -101,7 +92,7 @@ export default function Home() {
 
   return (
     <div className="app-layout">
-      <SessionHistory onSelect={handleSessionSelect} refreshTrigger={refreshTrigger} />
+      <SessionHistory refreshTrigger={refreshTrigger} />
 
       <main className="main-content" id="main-content">
         <header className="app-header no-print">

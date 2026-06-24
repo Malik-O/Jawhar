@@ -2,6 +2,7 @@
 
 import { PipelineStep } from '../types/session';
 import { IconUpload, IconAudioWave, IconMic, IconBrain, IconCheck, IconX, IconRefresh, IconPlay, IconArrowRight } from './Icons';
+import ParsedTranscript from './ParsedTranscript';
 
 interface ProcessingViewProps {
   step: PipelineStep;
@@ -147,7 +148,9 @@ export default function ProcessingView({
               <IconMic size={18} />
               النص المفرّغ
             </h3>
-            <div className="pv-transcript-box">{transcript}</div>
+            <div className="pv-transcript-box bg-[#0f172a]/50 p-4 rounded border border-white/5 mt-2 h-[300px] overflow-y-auto">
+              <ParsedTranscript text={transcript} />
+            </div>
           </div>
         )}
 

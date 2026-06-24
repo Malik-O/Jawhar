@@ -7,8 +7,11 @@ export interface SessionData {
   failedAt: string;
   title: string;
   transcript: string;
+  rawTranscript: string;
+  words: { word: string; start: number; end: number }[];
   summary: string;
   keyPoints: string[];
+  duration: number;
   createdAt: string;
 }
 
@@ -19,6 +22,7 @@ export interface SessionListItem {
   fileType: 'audio' | 'video';
   status: SessionStatus;
   failedAt: string;
+  duration: number;
   createdAt: string;
 }
 
