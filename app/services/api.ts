@@ -1,4 +1,4 @@
-import { SessionData, SessionListItem } from '../types/session';
+import { SessionData, SessionListItem, QuranVerse } from '../types/session';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -35,7 +35,17 @@ export async function transcribeAudio(sessionId: string): Promise<{ status: stri
   return res.json();
 }
 
-/** Step 4: Summarize with Gemini */
+/** Step 4: Enrich Quran verses with Uthmani text & references */
+export async function enrichVerses(sessionId: string): Promise<{ status: string; quranVerses: QuranVerse[]; transcript: string }> {
+  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/enrich-verses`, { method: 'POST' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'فشل استخراج الآيات');
+  }
+  return res.json();
+}
+
+/** Step 5: Summarize with Gemini */
 export async function summarizeText(sessionId: string): Promise<{ status: string; title: string; summary: string; keyPoints: string[] }> {
   const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/summarize`, { method: 'POST' });
   if (!res.ok) {
@@ -45,11 +55,21 @@ export async function summarizeText(sessionId: string): Promise<{ status: string
   return res.json();
 }
 
-/** Fetch all sessions */
-export async function fetchSessions(): Promise<SessionListItem[]> {
-  const res = await fetch(`${API_BASE}/api/sessions`);
+/** Fetch all sessions (pass archived=true to get archived ones) */
+export async function fetchSessions(archived = false): Promise<SessionListItem[]> {
+  const res = await fetch(`${API_BASE}/api/sessions?archived=${archived}`);
   if (!res.ok) throw new Error('Failed to fetch sessions');
   return res.json();
+}
+
+/** Archive or unarchive a session */
+export async function archiveSession(id: string, archived: boolean): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/sessions/${id}/archive`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ archived }),
+  });
+  if (!res.ok) throw new Error('Failed to archive session');
 }
 
 /** Fetch a single session */

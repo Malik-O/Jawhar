@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { PipelineStep, StepResult } from '../types/session';
-import { startSession, extractAudio, transcribeAudio, summarizeText } from '../services/api';
+import { PipelineStep, StepResult, QuranVerse } from '../types/session';
+import { startSession, extractAudio, transcribeAudio, enrichVerses, summarizeText, fetchSession } from '../services/api';
 
 interface UseProcessorReturn {
   step: PipelineStep;
@@ -11,6 +11,8 @@ interface UseProcessorReturn {
   title: string;
   summary: string;
   keyPoints: string[];
+  quranVerses: QuranVerse[];
+  words: { word: string; start: number; end: number }[];
   errorMessage: string;
   failedStep: string;
   startProcessing: (file: File) => Promise<void>;
@@ -31,6 +33,8 @@ export function useProcessor(): UseProcessorReturn {
   const [title, setTitle] = useState('');
   const [summary, setSummary] = useState('');
   const [keyPoints, setKeyPoints] = useState<string[]>([]);
+  const [quranVerses, setQuranVerses] = useState<QuranVerse[]>([]);
+  const [words, setWords] = useState<{ word: string; start: number; end: number }[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [failedStep, setFailedStep] = useState('');
 
@@ -43,6 +47,13 @@ export function useProcessor(): UseProcessorReturn {
     setStep('transcribing');
     const result = await transcribeAudio(id);
     setTranscript(result.transcript);
+  }, []);
+
+  const runEnrich = useCallback(async (id: string) => {
+    setStep('enriching');
+    const result = await enrichVerses(id);
+    setQuranVerses(result.quranVerses);
+    if (result.transcript) setTranscript(result.transcript);
   }, []);
 
   const runSummarize = useCallback(async (id: string) => {
@@ -60,6 +71,8 @@ export function useProcessor(): UseProcessorReturn {
     setTitle('');
     setSummary('');
     setKeyPoints([]);
+    setQuranVerses([]);
+    setWords([]);
 
     try {
       setStep('uploading');
@@ -68,7 +81,12 @@ export function useProcessor(): UseProcessorReturn {
 
       await runExtract(id);
       await runTranscribe(id);
+      await runEnrich(id);
       await runSummarize(id);
+
+      // Fetch full session to get word-level timestamps for audio player
+      const session = await fetchSession(id);
+      setWords(session.words || []);
 
       setStep('done');
     } catch (error) {
@@ -76,7 +94,7 @@ export function useProcessor(): UseProcessorReturn {
       setErrorMessage(message);
       setStep('error');
     }
-  }, [runExtract, runTranscribe, runSummarize]);
+  }, [runExtract, runTranscribe, runEnrich, runSummarize]);
 
   /**
    * Resume processing from a specific step.
@@ -98,26 +116,36 @@ export function useProcessor(): UseProcessorReturn {
       if (existingData.title) setTitle(existingData.title);
       if (existingData.summary) setSummary(existingData.summary);
       if (existingData.keyPoints) setKeyPoints(existingData.keyPoints);
+      if (existingData.quranVerses) setQuranVerses(existingData.quranVerses);
+      if (existingData.words) setWords(existingData.words);
     }
 
     try {
       if (fromStep === 'extracting') {
         await runExtract(id);
         await runTranscribe(id);
+        await runEnrich(id);
         await runSummarize(id);
       } else if (fromStep === 'transcribing') {
         await runTranscribe(id);
+        await runEnrich(id);
+        await runSummarize(id);
+      } else if (fromStep === 'enriching') {
+        await runEnrich(id);
         await runSummarize(id);
       } else if (fromStep === 'summarizing') {
         await runSummarize(id);
       }
+      // Fetch full session to get word-level timestamps for audio player
+      const session = await fetchSession(id);
+      setWords(session.words || []);
       setStep('done');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'حدث خطأ غير متوقع';
       setErrorMessage(message);
       setStep('error');
     }
-  }, [runExtract, runTranscribe, runSummarize]);
+  }, [runExtract, runTranscribe, runEnrich, runSummarize]);
 
   const reset = useCallback(() => {
     setStep('idle');
@@ -126,12 +154,14 @@ export function useProcessor(): UseProcessorReturn {
     setTitle('');
     setSummary('');
     setKeyPoints([]);
+    setQuranVerses([]);
+    setWords([]);
     setErrorMessage('');
     setFailedStep('');
   }, []);
 
   return {
-    step, sessionId, transcript, title, summary, keyPoints,
+    step, sessionId, transcript, title, summary, keyPoints, quranVerses, words,
     errorMessage, failedStep,
     startProcessing, resumeSession, reset,
   };

@@ -1,8 +1,9 @@
 'use client';
 
-import { PipelineStep } from '../types/session';
-import { IconUpload, IconAudioWave, IconMic, IconBrain, IconCheck, IconX, IconRefresh, IconPlay, IconArrowRight } from './Icons';
+import { PipelineStep, QuranVerse } from '../types/session';
+import { IconUpload, IconAudioWave, IconMic, IconBrain, IconBook, IconCheck, IconX, IconPlay, IconArrowRight, IconHeadphones } from './Icons';
 import ParsedTranscript from './ParsedTranscript';
+import AudioSyncPlayer from './AudioSyncPlayer';
 
 interface ProcessingViewProps {
   step: PipelineStep;
@@ -12,7 +13,10 @@ interface ProcessingViewProps {
   title: string;
   summary: string;
   keyPoints: string[];
+  quranVerses: QuranVerse[];
   errorMessage: string;
+  audioUrl?: string;
+  words?: { word: string; start: number; end: number }[];
   onRetry: (fromStep: string) => void;
   onReset: () => void;
 }
@@ -20,18 +24,21 @@ interface ProcessingViewProps {
 interface StepDef {
   key: string;
   label: string;
+  hint: string;
   icon: React.ReactNode;
   pipelineStep: PipelineStep;
 }
 
 const STEPS: StepDef[] = [
-  { key: 'uploading', label: 'رفع الملف', icon: <IconUpload size={22} />, pipelineStep: 'uploading' },
-  { key: 'extracting', label: 'استخراج الصوت', icon: <IconAudioWave size={22} />, pipelineStep: 'extracting' },
-  { key: 'transcribing', label: 'تفريغ النص (Whisper)', icon: <IconMic size={22} />, pipelineStep: 'transcribing' },
-  { key: 'summarizing', label: 'التلخيص (Gemini)', icon: <IconBrain size={22} />, pipelineStep: 'summarizing' },
+  { key: 'uploading', label: 'رفع الملف', hint: 'جارٍ استلام الملف وتهيئته للمعالجة', icon: <IconUpload size={20} />, pipelineStep: 'uploading' },
+  { key: 'extracting', label: 'استخراج الصوت', hint: 'تحويل الملف إلى مسار صوتي نقي عالي الجودة', icon: <IconAudioWave size={20} />, pipelineStep: 'extracting' },
+  { key: 'transcribing', label: 'تفريغ النص', hint: 'تحويل الصوت إلى نص مكتوب بدقة باستخدام Whisper', icon: <IconMic size={20} />, pipelineStep: 'transcribing' },
+  { key: 'enriching', label: 'استخراج الآيات', hint: 'تحديد الآيات القرآنية وإثراؤها بالنص العثماني', icon: <IconBook size={20} />, pipelineStep: 'enriching' },
+  { key: 'summarizing', label: 'التلخيص', hint: 'توليد عنوان وملخص ونقاط رئيسية بالذكاء الاصطناعي', icon: <IconBrain size={20} />, pipelineStep: 'summarizing' },
+  { key: 'listening', label: 'الاستماع والمراجعة', hint: 'استمع للملف الصوتي مع متابعة النص المفرّغ', icon: <IconHeadphones size={20} />, pipelineStep: 'done' },
 ];
 
-const STEP_ORDER = ['uploading', 'extracting', 'transcribing', 'summarizing', 'done'];
+const STEP_ORDER = ['uploading', 'extracting', 'transcribing', 'enriching', 'summarizing', 'listening', 'done'];
 
 /**
  * Determines step visual status.
@@ -71,7 +78,7 @@ function getResumeStep(failedAtStep: string): string {
 }
 
 export default function ProcessingView({
-  step, failedAtStep, transcript, title, summary, keyPoints, errorMessage, onRetry, onReset,
+  step, failedAtStep, transcript, title, summary, keyPoints, quranVerses, errorMessage, audioUrl, words, onRetry, onReset,
 }: ProcessingViewProps) {
   if (step === 'idle' && !failedAtStep) return null;
 
@@ -81,47 +88,82 @@ export default function ProcessingView({
   const resumeStep = failedAtStep ? getResumeStep(failedAtStep) : '';
 
   return (
-    <div className="processing-view" id="processing-view">
-      {/* Step indicators */}
-      <div className="pv-steps">
-        {STEPS.map((s) => {
-          const status = getStepStatus(step, s.key, failedAtStep);
-          return (
-            <div key={s.key} className={`pv-step ${status}`}>
-              <div className="pv-step-icon">
-                {status === 'completed' ? (
-                  <IconCheck size={18} />
-                ) : status === 'active' ? (
-                  <span className="pv-spinner" />
-                ) : status === 'error' ? (
-                  <IconX size={18} />
-                ) : (
-                  s.icon
+    <div className="w-full max-w-[720px] mx-auto animate-slide-up px-3 sm:px-0" id="processing-view">
+      {/* Step indicators — vertical timeline */}
+      <div className="relative mb-8 rounded-[20px] bg-white/[0.02] border border-white/[0.06] p-4 sm:p-5 sm:p-6">
+        <div className="flex flex-col gap-0">
+          {STEPS.map((s, idx) => {
+            const status = getStepStatus(step, s.key, failedAtStep);
+            const isLast = idx === STEPS.length - 1;
+
+            return (
+              <div key={s.key} className="flex gap-4 relative">
+                {/* Connecting line */}
+                {!isLast && (
+                  <div className={`absolute right-[19px] top-[44px] bottom-0 w-[2px] rounded-full transition-all duration-500 ${
+                    status === 'completed' ? 'bg-gradient-to-b from-[#00C8C8]/60 to-[#00C8C8]/20' : 'bg-white/[0.06]'
+                  }`} />
                 )}
+
+                {/* Icon circle */}
+                <div className={`relative flex items-center justify-center w-10 h-10 min-w-10 rounded-full border-2 transition-all duration-300 z-10 ${
+                  status === 'active'
+                    ? 'border-[#FF9800] bg-[#FF9800]/15 text-[#FF9800] shadow-[0_0_20px_rgba(255,152,0,0.15)]'
+                    : status === 'completed'
+                    ? 'border-[#00C8C8]/40 bg-[#00C8C8]/10 text-[#00C8C8]'
+                    : status === 'error'
+                    ? 'border-red-400/40 bg-red-400/10 text-red-400'
+                    : 'border-white/[0.08] bg-white/[0.03] text-[#606060]'
+                }`}>
+                  {status === 'completed' ? (
+                    <IconCheck size={18} />
+                  ) : status === 'active' ? (
+                    <span className="w-4 h-4 border-2 border-white/[0.08] border-t-[#FF9800] rounded-full animate-spin-fast" />
+                  ) : status === 'error' ? (
+                    <IconX size={18} />
+                  ) : (
+                    s.icon
+                  )}
+                </div>
+
+                {/* Label + hint */}
+                <div className={`flex flex-col pt-1.5 pb-4 flex-1 transition-all duration-300 ${
+                  status === 'active' ? 'opacity-100' : status === 'pending' ? 'opacity-50' : 'opacity-80'
+                }`}>
+                  <span className={`text-sm font-semibold whitespace-nowrap overflow-hidden text-ellipsis ${
+                    status === 'active' ? 'text-[#FF9800]' : status === 'completed' ? 'text-[#00C8C8]' : status === 'error' ? 'text-red-400' : 'text-[#808080]'
+                  }`}>
+                    {s.label}
+                  </span>
+                  <span className={`text-[0.72rem] mt-1 leading-relaxed ${
+                    status === 'active' ? 'text-[#B0B0B0]' : 'text-[#606060]'
+                  }`}>
+                    {s.hint}
+                  </span>
+                </div>
               </div>
-              <span className="pv-step-label">{s.label}</span>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       {/* Error / Stopped banner with Resume button */}
       {isStopped && (
-        <div className="pv-stopped-banner">
-          <div className="pv-stopped-info">
-            <IconX size={20} className="pv-error-icon" />
-            <span className="pv-error-text">{errorMessage}</span>
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 px-4 sm:px-6 py-4 sm:py-5 rounded-[20px] bg-[#FF9800]/[0.06] border border-[#FF9800]/25 mb-8 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <IconX size={20} className="text-red-400 min-w-5" />
+            <span className="flex-1 text-red-400 text-sm">{errorMessage}</span>
           </div>
-          <div className="pv-stopped-actions">
+          <div className="flex gap-3 flex-wrap">
             <button
-              className="pv-resume-btn"
+              className="ss-accent-btn flex items-center gap-2 px-5 sm:px-6 py-2.5 rounded-[10px] font-semibold border-none cursor-pointer"
               onClick={() => onRetry(resumeStep)}
               id="resume-button"
             >
               <IconPlay size={16} />
               متابعة المعالجة
             </button>
-            <button className="pv-back-btn" onClick={onReset}>
+            <button className="flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-[10px] border border-white/[0.08] bg-transparent text-[#B0B0B0] text-sm hover:bg-white/[0.06] hover:text-[#E0E0E0] transition-all cursor-pointer" onClick={onReset}>
               <IconArrowRight size={16} />
               رجوع
             </button>
@@ -129,61 +171,75 @@ export default function ProcessingView({
         </div>
       )}
 
-      {/* Regular error during active processing (no failedAtStep) */}
+      {/* Regular error during active processing */}
       {isError && !failedAtStep && (
-        <div className="pv-error">
-          <IconX size={20} className="pv-error-icon" />
-          <span className="pv-error-text">{errorMessage}</span>
-          <button className="pv-error-btn" onClick={onReset}>
+        <div className="flex items-center gap-3 px-5 py-3.5 rounded-[10px] bg-red-400/[0.08] border border-red-400/20 mb-6">
+          <IconX size={20} className="text-red-400 min-w-5" />
+          <span className="flex-1 text-red-400 text-sm">{errorMessage}</span>
+          <button className="px-4 py-1.5 rounded-[10px] border border-red-400/30 bg-transparent text-[#B0B0B0] text-sm hover:bg-white/[0.06] hover:text-[#E0E0E0] transition-all cursor-pointer" onClick={onReset}>
             رجوع
           </button>
         </div>
       )}
 
       {/* Live data display */}
-      <div className="pv-data">
+      <div className="flex flex-col gap-4 sm:gap-5">
+        {audioUrl && words && words.length > 0 && (
+          <div className="bg-white/[0.035] border border-white/[0.08] rounded-[20px] px-4 sm:px-5 py-4 animate-fade-in">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-[#FF9800] mb-3 pb-2 border-b border-white/[0.08]">
+              <IconHeadphones size={18} />
+              الاستماع والمراجعة
+            </h3>
+            <AudioSyncPlayer
+              audioUrl={audioUrl}
+              words={words}
+              duration={0}
+            />
+          </div>
+        )}
+
         {transcript && (
-          <div className="pv-data-section">
-            <h3 className="pv-data-title">
+          <div className="bg-white/[0.035] border border-white/[0.08] rounded-[20px] px-4 sm:px-5 py-4 animate-fade-in">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-[#FF9800] mb-3 pb-2 border-b border-white/[0.08]">
               <IconMic size={18} />
               النص المفرّغ
             </h3>
-            <div className="pv-transcript-box bg-[#0f172a]/50 p-4 rounded border border-white/5 mt-2 h-[300px] overflow-y-auto">
-              <ParsedTranscript text={transcript} />
+            <div className="bg-[#161616]/50 p-3 sm:p-4 rounded-[10px] border border-white/5 mt-2 h-[250px] sm:h-[300px] overflow-y-auto text-[#B0B0B0] text-sm leading-[1.9] whitespace-pre-wrap">
+              <ParsedTranscript text={transcript} quranVerses={quranVerses} />
             </div>
           </div>
         )}
 
         {title && (
-          <div className="pv-data-section">
-            <h3 className="pv-data-title">
+          <div className="bg-white/[0.035] border border-white/[0.08] rounded-[20px] px-4 sm:px-5 py-4 animate-fade-in">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-[#FF9800] mb-3 pb-2 border-b border-white/[0.08]">
               <IconBrain size={18} />
               العنوان المقترح
             </h3>
-            <p className="pv-title-text">{title}</p>
+            <p className="text-base sm:text-lg font-semibold text-[#E0E0E0]">{title}</p>
           </div>
         )}
 
         {summary && (
-          <div className="pv-data-section">
-            <h3 className="pv-data-title">
+          <div className="bg-white/[0.035] border border-white/[0.08] rounded-[20px] px-4 sm:px-5 py-4 animate-fade-in">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-[#FF9800] mb-3 pb-2 border-b border-white/[0.08]">
               <IconBrain size={18} />
               الملخص
             </h3>
-            <div className="pv-summary-text">{summary}</div>
+            <div className="text-[#E0E0E0] text-sm leading-[1.9] whitespace-pre-wrap">{summary}</div>
           </div>
         )}
 
         {keyPoints.length > 0 && (
-          <div className="pv-data-section">
-            <h3 className="pv-data-title">
+          <div className="bg-white/[0.035] border border-white/[0.08] rounded-[20px] px-4 sm:px-5 py-4 animate-fade-in">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-[#FF9800] mb-3 pb-2 border-b border-white/[0.08]">
               <IconBrain size={18} />
               النقاط الرئيسية
             </h3>
-            <ul className="pv-keypoints">
+            <ul className="list-none flex flex-col gap-2">
               {keyPoints.map((p, i) => (
-                <li key={i} className="pv-keypoint">
-                  <span className="pv-kp-num">{i + 1}</span>
+                <li key={i} className="flex items-start gap-3 py-2 text-sm text-[#E0E0E0] leading-relaxed">
+                  <span className="flex items-center justify-center w-6 h-6 min-w-6 rounded-full bg-[#FF9800] text-[#101010] font-bold text-xs">{i + 1}</span>
                   <span>{p}</span>
                 </li>
               ))}
@@ -194,8 +250,8 @@ export default function ProcessingView({
 
       {/* Done actions */}
       {isDone && (
-        <div className="pv-done-actions">
-          <button className="action-btn print-btn" onClick={() => window.print()}>
+        <div className="mt-6 flex justify-center">
+          <button className="ss-accent-btn flex items-center gap-2 px-6 py-2.5 rounded-[10px] font-semibold border-none cursor-pointer" onClick={() => window.print()}>
             <IconPlay size={18} />
             عرض الملخص الكامل
           </button>
