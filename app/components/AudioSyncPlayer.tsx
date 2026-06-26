@@ -3,11 +3,24 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import { IconSkipBack10, IconSkipForward10 } from './Icons';
+import { filterArabicOnly } from '../utils/arabicFilter';
 
 interface WordTimestamp {
   word: string;
   start: number;
   end: number;
+  speaker?: string;
+}
+
+const SPEAKER_COLORS = [
+  '#FF9800', '#00C8C8', '#7C4DFF', '#4CAF50',
+  '#E91E63', '#2196F3', '#FF5722', '#FFC107',
+];
+
+function getSpeakerColor(speaker?: string): string | null {
+  if (!speaker) return null;
+  const idx = parseInt(speaker.replace('SPEAKER_', '')) || 0;
+  return SPEAKER_COLORS[idx % SPEAKER_COLORS.length];
 }
 
 interface AudioSyncPlayerProps {
@@ -24,12 +37,15 @@ function formatTime(seconds: number): string {
 
 export default function AudioSyncPlayer({ audioUrl, words, duration }: AudioSyncPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(duration || 0);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isReady, setIsReady] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [hoverX, setHoverX] = useState<number | null>(null);
   const shouldAutoScrollRef = useRef(false);
 
   /* ── Initialize WaveSurfer ── */
@@ -64,11 +80,6 @@ export default function AudioSyncPlayer({ audioUrl, words, duration }: AudioSync
     ws.on('play', () => setIsPlaying(true));
     ws.on('pause', () => setIsPlaying(false));
     ws.on('finish', () => setIsPlaying(false));
-
-    /* 'interaction' fires on mouse up after drag/click — auto-scroll only then */
-    ws.on('interaction', () => {
-      shouldAutoScrollRef.current = true;
-    });
 
     return () => {
       ws.destroy();
@@ -113,17 +124,98 @@ export default function AudioSyncPlayer({ audioUrl, words, duration }: AudioSync
     ws.setPlaybackRate(next);
   }, [playbackRate]);
 
+  /* ── RTL seek: overlay handles mouse, flips X to seek correctly ── */
+  const seekFromOverlay = useCallback((clientX: number) => {
+    const ws = wavesurferRef.current;
+    const overlay = overlayRef.current;
+    if (!ws || !overlay || !isReady) return;
+    const rect = overlay.getBoundingClientRect();
+    const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+    /* RTL: right edge = 0% (start), left edge = 100% (end) */
+    const percent = 1 - x / rect.width;
+    ws.setTime(percent * ws.getDuration());
+  }, [isReady]);
+
+  const handleOverlayMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    setIsDragging(true);
+    seekFromOverlay(e.clientX);
+  }, [seekFromOverlay]);
+
+  const handleOverlayMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    const rect = overlay.getBoundingClientRect();
+    setHoverX(Math.max(0, Math.min(rect.width, e.clientX - rect.left)));
+    if (isDragging) {
+      seekFromOverlay(e.clientX);
+    }
+  }, [isDragging, seekFromOverlay]);
+
+  const handleOverlayMouseLeave = useCallback(() => {
+    setHoverX(null);
+  }, []);
+
+  /* Global mouseup to end drag — auto-scroll only on release */
+  useEffect(() => {
+    if (!isDragging) return;
+    const onUp = () => {
+      setIsDragging(false);
+      /* Delay slightly so currentTime updates from the last seek before scrolling */
+      requestAnimationFrame(() => {
+        shouldAutoScrollRef.current = true;
+      });
+    };
+    window.addEventListener('mouseup', onUp);
+    return () => window.removeEventListener('mouseup', onUp);
+  }, [isDragging]);
+
+  /* Hover time preview (RTL: inverted) */
+  const hoverTime = hoverX !== null && audioDuration > 0
+    ? (1 - hoverX / (overlayRef.current?.getBoundingClientRect().width || 1)) * audioDuration
+    : null;
+
+  /* ── Custom smooth scroll (ease-out cubic) to active word ── */
+  const wordsContainerRef = useRef<HTMLDivElement>(null);
+
+  const smoothScrollToActive = useCallback(() => {
+    const container = wordsContainerRef.current;
+    if (!container) return;
+    const active = container.querySelector('[data-active="true"]') as HTMLElement | null;
+    if (!active) return;
+
+    /* Use getBoundingClientRect for accurate positioning relative to container */
+    const containerRect = container.getBoundingClientRect();
+    const activeRect = active.getBoundingClientRect();
+    /* Distance from active's top to container's top, accounting for current scroll */
+    const activeOffsetFromContainerTop = activeRect.top - containerRect.top + container.scrollTop;
+    /* Center the active element in the viewport */
+    const targetTop = activeOffsetFromContainerTop - container.clientHeight / 2 + activeRect.height / 2;
+    const startTop = container.scrollTop;
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    const distance = Math.max(0, Math.min(maxScroll, targetTop)) - startTop;
+
+    if (Math.abs(distance) < 1) return;
+
+    const duration = 400;
+    const startTime = performance.now();
+
+    const animate = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / duration);
+      /* ease-out cubic: 1 - (1 - t)^3 */
+      const eased = 1 - Math.pow(1 - t, 3);
+      container.scrollTop = startTop + distance * eased;
+      if (t < 1) requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
+  }, []);
+
   /* ── Auto-scroll: only when flagged (play start, seek, or mouse up) ── */
   useEffect(() => {
     if (!shouldAutoScrollRef.current) return;
-    const container = containerRef.current?.parentElement?.querySelector('[data-words-container]');
-    if (!container) return;
-    const active = container.querySelector('[data-active="true"]');
-    if (active) {
-      active.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+    smoothScrollToActive();
     shouldAutoScrollRef.current = false;
-  }, [currentTime]);
+  }, [currentTime, smoothScrollToActive]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -133,15 +225,36 @@ export default function AudioSyncPlayer({ audioUrl, words, duration }: AudioSync
           <span className="text-[0.65rem] text-[#808080] font-mono">{formatTime(audioDuration)}</span>
         </div>
 
-        {/* WaveSurfer waveform */}
+        {/* WaveSurfer waveform — canvas flipped for RTL, overlay handles seeking */}
         <div className="relative w-full">
+          <div style={{ transform: 'scaleX(-1)' }}>
+            <div
+              ref={containerRef}
+              style={{ minHeight: 64, pointerEvents: 'none' }}
+            />
+          </div>
+          {/* Click/drag overlay — NOT flipped, handles RTL seeking */}
           <div
-            ref={containerRef}
-            className="ws-rtl w-full cursor-pointer select-none rounded-lg"
-            style={{ minHeight: 64 }}
+            ref={overlayRef}
+            className="absolute inset-0 cursor-pointer select-none rounded-lg"
+            onMouseDown={handleOverlayMouseDown}
+            onMouseMove={handleOverlayMouseMove}
+            onMouseLeave={handleOverlayMouseLeave}
           />
+          {/* Hover time tooltip */}
+          {hoverTime !== null && hoverX !== null && overlayRef.current && (
+            <div
+              className="absolute -top-7 pointer-events-none bg-[#1a1a1a] border border-[#FF9800]/30 rounded-[10px] px-2 py-0.5 text-[0.65rem] text-[#FF9800] font-mono z-10"
+              style={{
+                left: `${(hoverX / overlayRef.current.getBoundingClientRect().width) * 100}%`,
+                transform: 'translateX(-50%)',
+              }}
+            >
+              {formatTime(hoverTime)}
+            </div>
+          )}
           {!isReady && (
-            <div className="absolute inset-0 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="w-6 h-6 border-2 border-white/[0.08] border-t-[#FF9800] rounded-full animate-spin" />
             </div>
           )}
@@ -196,6 +309,7 @@ export default function AudioSyncPlayer({ audioUrl, words, duration }: AudioSync
 
       {words.length > 0 && (
         <div
+          ref={wordsContainerRef}
           data-words-container
           className="bg-[#161616] p-3 sm:p-5 rounded-[20px] border border-white/[0.08] leading-[2.4] text-[1.05rem] max-h-[250px] sm:max-h-[300px] overflow-y-auto"
           dir="rtl"
@@ -203,11 +317,13 @@ export default function AudioSyncPlayer({ audioUrl, words, duration }: AudioSync
           {words.map((w, i) => {
             const isActive = currentTime >= w.start && currentTime < w.end;
             const isPast = currentTime >= w.end;
+            const speakerColor = getSpeakerColor(w.speaker);
             return (
               <span
                 key={i}
                 data-active={isActive}
                 onClick={() => handleWordClick(w.start)}
+                style={speakerColor && !isActive ? { borderBottom: `2px solid ${speakerColor}30` } : undefined}
                 className={`
                   inline-block px-[3px] py-[1px] rounded cursor-pointer transition-all duration-150
                   ${isActive
@@ -219,7 +335,7 @@ export default function AudioSyncPlayer({ audioUrl, words, duration }: AudioSync
                   hover:bg-white/[0.06]
                 `}
               >
-                {w.word}{' '}
+                {filterArabicOnly(w.word)}{' '}
               </span>
             );
           })}

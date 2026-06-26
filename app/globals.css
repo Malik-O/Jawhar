@@ -93,11 +93,190 @@ body {
     background: white !important;
     color: #1a1a1a !important;
     box-shadow: none !important;
+    border-color: #ddd !important;
   }
-  body { font-size: 12pt; line-height: 1.6; }
+  html, body {
+    font-size: 12pt;
+    line-height: 1.8;
+    background: white !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
   .no-print { display: none !important; }
   .print-only { display: block !important; }
-  @page { margin: 2cm; size: A4; }
+
+  /* Neutralize all overflow / height constraints from screen layout */
+  html, body, body > div,
+  #main-content, #main-content > div, #main-content > div > div,
+  .animate-slide-up, .animate-slide-up > div, .animate-slide-up > div > div,
+  .flex-1, .min-h-0, .overflow-hidden, .overflow-y-auto {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+  }
+
+  @page {
+    margin: 1.5cm 1.8cm;
+    size: A4;
+  }
+
+  /* Print container */
+  .print-document {
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    color: #1a1a1a;
+    font-family: "Segoe UI", "Tahoma", sans-serif;
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  /* Print header */
+  .print-header {
+    text-align: center;
+    border-bottom: 2px solid #FF9800;
+    padding-bottom: 14px;
+    margin-bottom: 24px;
+  }
+  .print-header h1 {
+    font-size: 20pt;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin: 0 0 6px 0;
+    line-height: 1.4;
+  }
+  .print-header .print-meta {
+    font-size: 10pt;
+    color: #666;
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .print-header .print-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* Print section titles */
+  .print-section {
+    margin-bottom: 28px;
+    page-break-inside: avoid;
+  }
+  .print-section > h2 {
+    font-size: 14pt;
+    font-weight: 700;
+    color: #B25C00;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 6px;
+    margin: 0 0 14px 0;
+  }
+
+  /* Summary body text */
+  .print-section .print-summary-body {
+    font-size: 12pt;
+    line-height: 2;
+    text-align: justify;
+    white-space: pre-wrap;
+    color: #333;
+  }
+
+  /* Key points list */
+  .print-section .print-keypoints-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .print-section .print-keypoints-list > li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-right: 3px solid #FF9800;
+    background: #FFF8F0 !important;
+    border-radius: 6px;
+    page-break-inside: avoid;
+  }
+  .print-section .print-keypoints-list .kp-number {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #FF9800 !important;
+    color: #fff !important;
+    font-size: 10pt;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .print-section .print-keypoints-list .kp-text {
+    font-size: 11pt;
+    line-height: 1.8;
+    color: #333;
+  }
+
+  /* Transcript section — allow page breaks inside */
+  .print-section.print-transcript {
+    page-break-inside: auto;
+  }
+  .print-section .print-transcript-body {
+    font-size: 11pt;
+    line-height: 2.1;
+    text-align: justify;
+    color: #444;
+    white-space: pre-wrap;
+  }
+
+  /* Quran / Hadith tags in print */
+  .print-transcript-body .quran-verse-print {
+    display: block;
+    margin: 12px 0;
+    padding: 10px 16px;
+    border-right: 4px solid #FF9800;
+    background: #FFF8F0 !important;
+    border-radius: 6px;
+    color: #B25C00 !important;
+    font-size: 13pt;
+    line-height: 2;
+    page-break-inside: avoid;
+  }
+  .print-transcript-body .quran-verse-print .verse-ref {
+    display: block;
+    margin-top: 6px;
+    font-size: 9pt;
+    color: #999 !important;
+  }
+  .print-transcript-body .hadith-print {
+    display: block;
+    margin: 12px 0;
+    padding: 10px 16px;
+    border-right: 4px solid #00C8C8;
+    background: #F0FFFE !important;
+    border-radius: 6px;
+    color: #006666 !important;
+    font-size: 12pt;
+    line-height: 2;
+    page-break-inside: avoid;
+  }
+
+  /* Print footer */
+  .print-footer {
+    margin-top: 32px;
+    padding-top: 12px;
+    border-top: 1px solid #ddd;
+    text-align: center;
+    font-size: 9pt;
+    color: #999;
+  }
+
+  /* Avoid breaking inside small blocks */
+  .print-avoid-break {
+    page-break-inside: avoid;
+  }
 }
 
 /* ═══ Waveform ═══ */
@@ -161,9 +340,4 @@ body {
 /* ═══ Prevent body scroll when drawer open ═══ */
 body.drawer-open {
   overflow: hidden;
-}
-
-/* ═══ WaveSurfer RTL: flip canvas so waveform starts from right ═══ */
-.ws-rtl > canvas {
-  transform: scaleX(-1);
 }

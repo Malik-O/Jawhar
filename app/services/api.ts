@@ -55,6 +55,33 @@ export async function summarizeText(sessionId: string): Promise<{ status: string
   return res.json();
 }
 
+/** Start autonomous processing (fire-and-forget — backend runs full pipeline) */
+export async function startProcessing(sessionId: string): Promise<{ sessionId: string; status: string }> {
+  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/process`, { method: 'POST' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'فشل بدء المعالجة');
+  }
+  return res.json();
+}
+
+/** Stop/cancel active processing */
+export async function stopProcessing(sessionId: string): Promise<{ sessionId: string; status: string }> {
+  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/stop`, { method: 'POST' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'فشل إيقاف المعالجة');
+  }
+  return res.json();
+}
+
+/** Check if session is currently processing and its status */
+export async function getSessionStatus(sessionId: string): Promise<{ sessionId: string; processing: boolean; status: string; failedAt: string }> {
+  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/status`);
+  if (!res.ok) throw new Error('Failed to get session status');
+  return res.json();
+}
+
 /** Fetch all sessions (pass archived=true to get archived ones) */
 export async function fetchSessions(archived = false): Promise<SessionListItem[]> {
   const res = await fetch(`${API_BASE}/api/sessions?archived=${archived}`);
@@ -93,6 +120,16 @@ export async function updateTranscript(id: string, transcript: string): Promise<
     body: JSON.stringify({ transcript }),
   });
   if (!res.ok) throw new Error('Failed to update transcript');
+}
+
+/** Update session metadata (title and/or summary) */
+export async function updateSessionMetadata(id: string, metadata: { title?: string; summary?: string }): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/sessions/${id}/metadata`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(metadata),
+  });
+  if (!res.ok) throw new Error('Failed to update metadata');
 }
 
 /** Get audio stream URL for a session */

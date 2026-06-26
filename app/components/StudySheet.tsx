@@ -9,23 +9,114 @@ import {
 } from './Icons';
 import ParsedTranscript from './ParsedTranscript';
 import AudioSyncPlayer from './AudioSyncPlayer';
-import { getAudioUrl, updateTranscript } from '../services/api';
+import { getAudioUrl, updateTranscript, updateSessionMetadata } from '../services/api';
 import { formatDuration } from '../utils/formatDuration';
+import { filterArabicOnly } from '../utils/arabicFilter';
+
+// ── Speaker color palette ──
+const SPEAKER_COLORS = [
+  '#FF9800', // orange (primary speaker)
+  '#00C8C8', // teal
+  '#7C4DFF', // purple
+  '#4CAF50', // green
+  '#E91E63', // pink
+  '#2196F3', // blue
+  '#FF5722', // deep orange
+  '#FFC107', // amber
+];
+
+const SPEAKER_INITIALS = ['ش', 'ض', 'ث', 'ر', 'خ', 'س', 'د', 'ج'];
+
+const SPEAKER_LABELS_AR: Record<string, string> = {
+  'SPEAKER_00': 'المتحدث الأول',
+  'SPEAKER_01': 'المتحدث الثاني',
+  'SPEAKER_02': 'المتحدث الثالث',
+  'SPEAKER_03': 'المتحدث الرابع',
+  'SPEAKER_04': 'المتحدث الخامس',
+  'SPEAKER_05': 'المتحدث السادس',
+  'SPEAKER_06': 'المتحدث السابع',
+  'SPEAKER_07': 'المتحدث الثامن',
+};
+
+function getSpeakerColor(speaker: string): string {
+  const idx = parseInt(speaker.replace('SPEAKER_', '')) || 0;
+  return SPEAKER_COLORS[idx % SPEAKER_COLORS.length];
+}
+
+function getSpeakerInitial(speaker: string): string {
+  const idx = parseInt(speaker.replace('SPEAKER_', '')) || 0;
+  return SPEAKER_INITIALS[idx % SPEAKER_INITIALS.length];
+}
+
+function getSpeakerLabel(speaker: string): string {
+  return SPEAKER_LABELS_AR[speaker] || `المتحدث ${speaker}`;
+}
+
+function formatTimeRange(start: number, end: number): string {
+  const fmt = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+  return `${fmt(start)} / ${fmt(end)}`;
+}
+
+interface ParsedSpeakerSection {
+  speaker: string;
+  text: string;
+}
+
+/** Parse [SPEAKER_XX] markers from transcript into sections */
+function parseSpeakerSections(transcript: string): ParsedSpeakerSection[] {
+  if (!transcript) return [];
+
+  const hasMarkers = /\[SPEAKER_\d+\]/.test(transcript);
+  if (!hasMarkers) {
+    return [{ speaker: 'SPEAKER_00', text: transcript }];
+  }
+
+  const parts = transcript.split(/(\[SPEAKER_\d+\])/gi);
+  const sections: ParsedSpeakerSection[] = [];
+  let currentSpeaker = 'SPEAKER_00';
+  let currentText = '';
+
+  for (const part of parts) {
+    const markerMatch = part.match(/\[SPEAKER_(\d+)\]/i);
+    if (markerMatch) {
+      if (currentText.trim()) {
+        sections.push({ speaker: currentSpeaker, text: currentText.trim() });
+      }
+      currentSpeaker = `SPEAKER_${markerMatch[1]}`;
+      currentText = '';
+    } else {
+      currentText += part;
+    }
+  }
+
+  if (currentText.trim()) {
+    sections.push({ speaker: currentSpeaker, text: currentText.trim() });
+  }
+
+  return sections;
+}
 
 interface StudySheetProps {
   data: SessionData;
   onBack: () => void;
+  onTitleChange?: (title: string) => void;
 }
 
-const SPEAKER_2_PLACEHOLDER = `Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem.`;
-
-export default function StudySheet({ data, onBack }: StudySheetProps) {
+export default function StudySheet({ data, onBack, onTitleChange }: StudySheetProps) {
   const [activeTab, setActiveTab] = useState<'summary' | 'transcript' | 'audio'>('transcript');
   const [transcript, setTranscript] = useState(data.transcript);
   const [isSaving, setIsSaving] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<'audio' | 'notes'>('audio');
   const [notes, setNotes] = useState('');
   const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
+  const [title, setTitle] = useState(data.title || data.originalFileName);
+  const [summary, setSummary] = useState(data.summary || '');
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editingSummary, setEditingSummary] = useState(false);
 
   const formattedDate = new Date(data.createdAt).toLocaleDateString('ar-EG', {
     year: 'numeric',
@@ -47,6 +138,41 @@ export default function StudySheet({ data, onBack }: StudySheetProps) {
       setIsSaving(false);
     }
   }, [data._id]);
+
+  const originalTitle = data.title || data.originalFileName;
+
+  const handleTitleSave = useCallback(async () => {
+    setEditingTitle(false);
+    const trimmed = title.trim();
+    if (!trimmed) {
+      setTitle(originalTitle);
+      return;
+    }
+    if (trimmed === originalTitle) return;
+    try {
+      await updateSessionMetadata(data._id, { title: trimmed });
+      onTitleChange?.(trimmed);
+    } catch (err) {
+      console.error('Failed to save title:', err);
+      setTitle(originalTitle);
+    }
+  }, [data._id, originalTitle, title, onTitleChange]);
+
+  const handleTitleCancel = useCallback(() => {
+    setEditingTitle(false);
+    setTitle(originalTitle);
+  }, [originalTitle]);
+
+  const handleSummarySave = useCallback(async () => {
+    setEditingSummary(false);
+    const trimmed = summary.trim();
+    if (trimmed === (data.summary || '')) return;
+    try {
+      await updateSessionMetadata(data._id, { summary: trimmed });
+    } catch (err) {
+      console.error('Failed to save summary:', err);
+    }
+  }, [data._id, data.summary, summary]);
 
   return (
     <div className="w-full h-full flex flex-col animate-slide-up">
@@ -72,10 +198,6 @@ export default function StudySheet({ data, onBack }: StudySheetProps) {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[16px] bg-[#FF9800]/[0.12] border border-[#FF9800]/25 text-[#FF9800] text-xs font-medium">
-            <IconFile size={14} />
-            محاضرة
-          </div>
           <div className="hidden md:flex items-center gap-2 text-[#808080] text-xs">
             <span className="flex items-center gap-1"><IconClock size={13} /> {formattedDate}</span>
             <span className="text-white/10">|</span>
@@ -89,67 +211,109 @@ export default function StudySheet({ data, onBack }: StudySheetProps) {
 
       {/* ── Title row ── */}
       <div className="px-3 sm:px-5 py-3 sm:py-4 border-b border-white/[0.08] no-print shrink-0">
-        <h1 className="text-lg sm:text-2xl font-bold leading-relaxed text-right" dir="rtl">
-          {data.title || data.originalFileName}
-        </h1>
-        {data.summary && (
-          <p className="text-xs sm:text-sm text-[#808080] mt-1.5 text-right leading-relaxed line-clamp-2" dir="rtl">
-            {data.summary.slice(0, 120)}...
-          </p>
+        {editingTitle ? (
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={handleTitleSave}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              if (e.key === 'Escape') handleTitleCancel();
+            }}
+            autoFocus
+            dir="rtl"
+            placeholder={originalTitle}
+            className="w-full text-lg sm:text-2xl font-bold leading-relaxed text-right bg-[#1a1a1a] border border-[#FF9800]/40 rounded-[8px] px-3 py-1.5 text-[#E0E0E0] focus:outline-none focus:border-[#FF9800] focus:ring-1 focus:ring-[#FF9800]/20 transition-all"
+          />
+        ) : (
+          <h1
+            className="text-lg sm:text-2xl font-bold leading-relaxed text-right cursor-text hover:text-[#FFB74D] transition-colors"
+            dir="rtl"
+            onClick={() => setEditingTitle(true)}
+            title="اضغط للتعديل"
+          >
+            {title}
+          </h1>
+        )}
+        {summary && (
+          editingSummary ? (
+            <textarea
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              onBlur={handleSummarySave}
+              autoFocus
+              dir="rtl"
+              className="w-full text-xs sm:text-sm text-[#B0B0B0] mt-1.5 text-right leading-relaxed bg-transparent border border-[#FF9800]/30 rounded-[8px] p-2 focus:outline-none focus:border-[#FF9800] resize-y"
+            />
+          ) : (
+            <p
+              className="text-xs sm:text-sm text-[#808080] mt-1.5 text-right leading-relaxed cursor-text hover:text-[#B0B0B0] transition-colors"
+              dir="rtl"
+              onClick={() => setEditingSummary(true)}
+              title="اضغط للتعديل"
+            >
+              {filterArabicOnly(summary)}
+            </p>
+          )
         )}
       </div>
 
       {/* ── Main content: center + right panel ── */}
-      <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden no-print">
         {/* Center — speaker diarization */}
         <div className="flex-1 min-w-0 overflow-y-auto px-3 sm:px-5 py-4 sm:py-5 pb-20 lg:pb-5" dir="rtl" id="diarization-content">
           <div className="flex items-center gap-2 mb-4">
             <IconUsers size={18} className="text-[#FF9800]" />
-            <h2 className="text-sm font-semibold text-[#FF9800]">تفريغ النص مع تمييز المتحدثين</h2>
+            <h2 className="text-sm font-semibold text-[#FF9800]">تفريغ النص</h2>
           </div>
 
-          {/* Speaker 1 — الشيخ / المحاضر */}
-          <SpeakerBlock
-            speakerLabel="الشيخ / المحاضر"
-            timestamp="12:00 / 2:45"
-            speakerColor="#FF9800"
-            speakerInitial="ش"
-          >
-            <div className="leading-[2.2] text-[1.02rem] text-[#E0E0E0] text-right" dir="rtl">
-              {transcript ? (
-                <ParsedTranscript
-                  text={transcript}
-                  editable
-                  onTextChange={handleTranscriptSave}
-                  quranVerses={data.quranVerses}
-                />
-              ) : (
-                <span className="text-[#808080] text-sm">لا يوجد نص متاح</span>
-              )}
-            </div>
-          </SpeakerBlock>
-
-          {/* Speaker 2 — الطلاب */}
-          <SpeakerBlock
-            speakerLabel="الطلاب"
-            timestamp="12:00 / 2:45"
-            speakerColor="#5b8def"
-            speakerInitial="ط"
-          >
-            <div className="leading-[1.9] text-sm text-[#808080] text-left" dir="ltr">
-              {SPEAKER_2_PLACEHOLDER}
-            </div>
-          </SpeakerBlock>
+          {/* Speaker-segmented transcript */}
+          {transcript ? (
+            (() => {
+              const sections = parseSpeakerSections(transcript);
+              return sections.map((section, idx) => {
+                const segData = data.speakerSegments?.find(s => s.speaker === section.speaker);
+                const color = getSpeakerColor(section.speaker);
+                const label = getSpeakerLabel(section.speaker);
+                const initial = getSpeakerInitial(section.speaker);
+                const timestamp = segData
+                  ? formatTimeRange(segData.start, segData.end)
+                  : '';
+                const isLast = idx === sections.length - 1;
+                return (
+                  <SpeakerBlock
+                    key={idx}
+                    speakerLabel={label}
+                    timestamp={timestamp}
+                    speakerColor={color}
+                    speakerInitial={initial}
+                  >
+                    <div className="leading-[2.2] text-[1.02rem] text-[#E0E0E0] text-right" dir="rtl">
+                      <ParsedTranscript
+                        text={section.text}
+                        editable={isLast}
+                        onTextChange={handleTranscriptSave}
+                        quranVerses={data.quranVerses}
+                      />
+                    </div>
+                  </SpeakerBlock>
+                );
+              });
+            })()
+          ) : (
+            <span className="text-[#808080] text-sm">لا يوجد نص متاح</span>
+          )}
 
           {/* Summary section (collapsible) */}
-          {data.summary && (
+          {summary && (
             <div className="mt-6 pt-5 border-t border-white/[0.08]">
               <div className="flex items-center gap-2 mb-3">
                 <IconText size={16} className="text-[#FF9800]" />
                 <h3 className="text-sm font-semibold text-[#FF9800]">الملخص</h3>
               </div>
               <div className="text-[#B0B0B0] text-sm leading-[2.1] whitespace-pre-wrap text-right" dir="rtl">
-                {data.summary}
+                {filterArabicOnly(summary)}
               </div>
             </div>
           )}
@@ -164,7 +328,7 @@ export default function StudySheet({ data, onBack }: StudySheetProps) {
                 {data.keyPoints.map((point, index) => (
                   <li key={index} className="flex items-start gap-3 px-4 py-3 bg-[#FF9800]/[0.04] rounded-[10px] border-r-[3px] border-[#FF9800] hover:bg-[#FF9800]/[0.08] transition-all">
                     <span className="flex items-center justify-center w-6 h-6 min-w-6 rounded-full bg-[#FF9800] text-[#101010] font-bold text-[11px]">{index + 1}</span>
-                    <span className="text-[0.82rem] leading-relaxed text-right" dir="rtl">{point}</span>
+                    <span className="text-[0.82rem] leading-relaxed text-right" dir="rtl">{filterArabicOnly(point)}</span>
                   </li>
                 ))}
               </ul>
@@ -270,35 +434,57 @@ export default function StudySheet({ data, onBack }: StudySheetProps) {
         </aside>
       </div>
 
-      {/* Print-only versions */}
+      {/* Print-only A4 document */}
       <div className="print-only hidden">
-        {data.summary && (
-          <section className="mb-10 last:mb-0">
-            <h2 className="text-lg font-semibold text-[#FF9800] mb-5 pb-2.5 border-b border-white/[0.08]">الملخص</h2>
-            <div className="text-[#E0E0E0] text-base leading-[2.1] whitespace-pre-wrap">{data.summary}</div>
-          </section>
-        )}
-        {data.keyPoints.length > 0 && (
-          <section className="mb-10 last:mb-0">
-            <h2 className="text-lg font-semibold text-[#FF9800] mb-5 pb-2.5 border-b border-white/[0.08]">أهم النقاط والفوائد</h2>
-            <ul className="list-none flex flex-col gap-3">
-              {data.keyPoints.map((point, index) => (
-                <li key={index} className="flex items-start gap-4 px-5 py-3.5 bg-[#FF9800]/[0.04] rounded-[10px] border-r-[3px] border-[#FF9800]">
-                  <span className="flex items-center justify-center w-7 h-7 min-w-7 rounded-full bg-[#FF9800] text-[#101010] font-bold text-xs">{index + 1}</span>
-                  <span className="text-sm leading-relaxed">{point}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-        {transcript && (
-          <section className="mb-10 last:mb-0">
-            <h2 className="text-lg font-semibold text-[#FF9800] mb-5 pb-2.5 border-b border-white/[0.08]">النص الكامل</h2>
-            <div className="text-[#B0B0B0] text-sm leading-[2.1] whitespace-pre-wrap">
-              <ParsedTranscript text={transcript} quranVerses={data.quranVerses} />
+        <div className="print-document" dir="rtl">
+          {/* Header */}
+          <div className="print-header">
+            <h1>{title}</h1>
+            <div className="print-meta">
+              <span>{formattedDate}</span>
+              {data.duration > 0 && <span>{formatDuration(data.duration)}</span>}
+              <span>{data.fileType === 'video' ? 'فيديو' : 'صوت'}</span>
             </div>
-          </section>
-        )}
+          </div>
+
+          {/* Summary */}
+          {summary && (
+            <section className="print-section">
+              <h2>الملخص</h2>
+              <div className="print-summary-body">{summary}</div>
+            </section>
+          )}
+
+          {/* Key Points */}
+          {data.keyPoints.length > 0 && (
+            <section className="print-section">
+              <h2>أهم النقاط والفوائد</h2>
+              <ul className="print-keypoints-list">
+                {data.keyPoints.map((point, index) => (
+                  <li key={index} className="print-avoid-break">
+                    <span className="kp-number">{index + 1}</span>
+                    <span className="kp-text">{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* Full Transcript */}
+          {transcript && (
+            <section className="print-section print-transcript">
+              <h2>النص الكامل</h2>
+              <div className="print-transcript-body">
+                <PrintTranscript text={transcript} quranVerses={data.quranVerses} />
+              </div>
+            </section>
+          )}
+
+          {/* Footer */}
+          <div className="print-footer">
+            تم إنشاء هذا المستند بواسطة أداة التفريغ الصوتي — {formattedDate}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -319,7 +505,10 @@ function SpeakerBlock({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mb-4 rounded-[20px] border border-white/[0.08] overflow-hidden">
+    <div
+      className="mb-4 rounded-[20px] border border-white/[0.08] overflow-hidden"
+      style={{ borderRightColor: `${speakerColor}40`, borderRightWidth: '3px' }}
+    >
       <div className="flex items-center justify-between px-4 py-2.5 bg-white/[0.02] border-b border-white/[0.08]">
         <div className="flex items-center gap-2.5">
           <span
@@ -336,12 +525,61 @@ function SpeakerBlock({
             {speakerLabel}
           </span>
         </div>
-        <span className="text-[0.7rem] text-[#808080] font-mono">{timestamp}</span>
+        {timestamp && <span className="text-[0.7rem] text-[#808080] font-mono">{timestamp}</span>}
       </div>
       <div className="px-4 py-4 bg-[#161616]/50">
         {children}
       </div>
     </div>
+  );
+}
+
+/** Print-friendly transcript renderer (no interactive elements) */
+function PrintTranscript({ text, quranVerses }: { text: string; quranVerses?: import('../types/session').QuranVerse[] }) {
+  if (!text) return null;
+
+  const parts = text.split(/(<fix\b[^>]*>[\s\S]*?<\/fix>|<quran\b[^>]*>[\s\S]*?<\/quran>|<hadith\b[^>]*>[\s\S]*?<\/hadith>|\n)/gi);
+
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (!part) return null;
+        if (part === '\n') return <br key={i} />;
+
+        const fixMatch = part.match(/<fix\b[^>]*original=["']?([^"'>]*)["']?[^>]*>([\s\S]*?)<\/fix>/i);
+        if (fixMatch) {
+          return <span key={i}>{fixMatch[2]}</span>;
+        }
+
+        const quranMatch = part.match(/<quran\b([^>]*)>([\s\S]*?)<\/quran>/i);
+        if (quranMatch) {
+          const attrs = quranMatch[1] || '';
+          const refMatch = attrs.match(/ref\s*=\s*["']?([^"'\s>]+)["']?/i);
+          const verse = refMatch && quranVerses
+            ? quranVerses.find(v => v.ref === refMatch[1])
+            : undefined;
+          return (
+            <span key={i} className="quran-verse-print">
+              ﴿ {verse ? verse.uthmani : quranMatch[2]} ﴾
+              {verse && (
+                <span className="verse-ref">{verse.surahName} {verse.surah}:{verse.ayah}</span>
+              )}
+            </span>
+          );
+        }
+
+        const hadithMatch = part.match(/<hadith\b[^>]*>([\s\S]*?)<\/hadith>/i);
+        if (hadithMatch) {
+          return <span key={i} className="hadith-print">»{hadithMatch[1]}«</span>;
+        }
+
+        if (part.trim().startsWith('- ')) {
+          return <span key={i} className="block mr-4 my-1">• {part.replace(/^\s*-\s/, '')}</span>;
+        }
+
+        return <span key={i}>{part}</span>;
+      })}
+    </>
   );
 }
 

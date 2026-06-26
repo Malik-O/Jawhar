@@ -1,9 +1,10 @@
 'use client';
 
-import { PipelineStep, QuranVerse } from '../types/session';
+import { PipelineStep, QuranVerse, ProgressInfo } from '../types/session';
 import { IconUpload, IconAudioWave, IconMic, IconBrain, IconBook, IconCheck, IconX, IconPlay, IconArrowRight, IconHeadphones } from './Icons';
 import ParsedTranscript from './ParsedTranscript';
 import AudioSyncPlayer from './AudioSyncPlayer';
+import { filterArabicOnly } from '../utils/arabicFilter';
 
 interface ProcessingViewProps {
   step: PipelineStep;
@@ -16,8 +17,9 @@ interface ProcessingViewProps {
   quranVerses: QuranVerse[];
   errorMessage: string;
   audioUrl?: string;
-  words?: { word: string; start: number; end: number }[];
-  onRetry: (fromStep: string) => void;
+  words?: { word: string; start: number; end: number; speaker?: string }[];
+  progress?: ProgressInfo | null;
+  onRetry: () => void;
   onReset: () => void;
 }
 
@@ -78,7 +80,7 @@ function getResumeStep(failedAtStep: string): string {
 }
 
 export default function ProcessingView({
-  step, failedAtStep, transcript, title, summary, keyPoints, quranVerses, errorMessage, audioUrl, words, onRetry, onReset,
+  step, failedAtStep, transcript, title, summary, keyPoints, quranVerses, errorMessage, audioUrl, words, progress, onRetry, onReset,
 }: ProcessingViewProps) {
   if (step === 'idle' && !failedAtStep) return null;
 
@@ -86,9 +88,45 @@ export default function ProcessingView({
   const isDone = step === 'done';
   const isStopped = isError && !!failedAtStep;
   const resumeStep = failedAtStep ? getResumeStep(failedAtStep) : '';
+  const progressPercent = progress?.progress ?? 0;
+  const isProcessing = !isError && !isDone;
 
   return (
     <div className="w-full max-w-[720px] mx-auto animate-slide-up px-3 sm:px-0" id="processing-view">
+      {/* Real-time progress bar */}
+      {isProcessing && progress && (
+        <div className="mb-4 rounded-[20px] bg-white/[0.02] border border-white/[0.06] p-4 sm:p-5 animate-fade-in">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-[#FF9800]">
+              {progress.message || (progress.status === 'uploading' ? 'جارٍ رفع الملف' : '')}
+            </span>
+            <span className="text-xs text-[#808080] font-mono">{progressPercent}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-l from-[#FF9800] to-[#FFB74D] transition-all duration-500 ease-out"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          {progress.chunk && progress.total && progress.total > 1 && (
+            <div className="flex items-center gap-2 mt-2">
+              {Array.from({ length: progress.total }, (_, i) => (
+                <div
+                  key={i}
+                  className={`flex-1 h-1.5 rounded-full transition-all duration-300 ${
+                    i < progress.chunk! - 1
+                      ? 'bg-[#00C8C8]/60'
+                      : i === progress.chunk! - 1
+                      ? 'bg-[#FF9800]'
+                      : 'bg-white/[0.06]'
+                  }`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Step indicators — vertical timeline */}
       <div className="relative mb-8 rounded-[20px] bg-white/[0.02] border border-white/[0.06] p-4 sm:p-5 sm:p-6">
         <div className="flex flex-col gap-0">
@@ -157,7 +195,7 @@ export default function ProcessingView({
           <div className="flex gap-3 flex-wrap">
             <button
               className="ss-accent-btn flex items-center gap-2 px-5 sm:px-6 py-2.5 rounded-[10px] font-semibold border-none cursor-pointer"
-              onClick={() => onRetry(resumeStep)}
+              onClick={() => onRetry()}
               id="resume-button"
             >
               <IconPlay size={16} />
@@ -216,7 +254,7 @@ export default function ProcessingView({
               <IconBrain size={18} />
               العنوان المقترح
             </h3>
-            <p className="text-base sm:text-lg font-semibold text-[#E0E0E0]">{title}</p>
+            <p className="text-base sm:text-lg font-semibold text-[#E0E0E0]">{filterArabicOnly(title)}</p>
           </div>
         )}
 
@@ -226,7 +264,7 @@ export default function ProcessingView({
               <IconBrain size={18} />
               الملخص
             </h3>
-            <div className="text-[#E0E0E0] text-sm leading-[1.9] whitespace-pre-wrap">{summary}</div>
+            <div className="text-[#E0E0E0] text-sm leading-[1.9] whitespace-pre-wrap">{filterArabicOnly(summary)}</div>
           </div>
         )}
 
@@ -240,7 +278,7 @@ export default function ProcessingView({
               {keyPoints.map((p, i) => (
                 <li key={i} className="flex items-start gap-3 py-2 text-sm text-[#E0E0E0] leading-relaxed">
                   <span className="flex items-center justify-center w-6 h-6 min-w-6 rounded-full bg-[#FF9800] text-[#101010] font-bold text-xs">{i + 1}</span>
-                  <span>{p}</span>
+                  <span>{filterArabicOnly(p)}</span>
                 </li>
               ))}
             </ul>

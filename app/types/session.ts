@@ -7,6 +7,13 @@ export interface QuranVerse {
   transcriptText: string;
 }
 
+export interface SpeakerSegment {
+  speaker: string;
+  start: number;
+  end: number;
+  text: string;
+}
+
 export interface SessionData {
   _id: string;
   sessionId?: string;
@@ -17,7 +24,8 @@ export interface SessionData {
   title: string;
   transcript: string;
   rawTranscript: string;
-  words: { word: string; start: number; end: number }[];
+  words: { word: string; start: number; end: number; speaker: string }[];
+  speakerSegments: SpeakerSegment[];
   summary: string;
   keyPoints: string[];
   quranVerses: QuranVerse[];
@@ -41,6 +49,15 @@ export type SessionStatus = 'uploaded' | 'extracted' | 'transcribed' | 'enriched
 
 export type PipelineStep = 'idle' | 'uploading' | 'extracting' | 'transcribing' | 'enriching' | 'summarizing' | 'done' | 'error';
 
+export interface ProgressInfo {
+  progress: number;
+  status?: string;
+  chunk?: number;
+  total?: number;
+  message?: string;
+  step?: string;
+}
+
 export interface StepResult {
   sessionId: string;
   transcript: string;
@@ -48,5 +65,6 @@ export interface StepResult {
   summary: string;
   keyPoints: string[];
   quranVerses: QuranVerse[];
-  words: { word: string; start: number; end: number }[];
+  words: { word: string; start: number; end: number; speaker: string }[];
+  speakerSegments: SpeakerSegment[];
 }

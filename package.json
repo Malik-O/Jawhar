@@ -13,6 +13,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-tooltip": "^6.0.8",
+    "socket.io-client": "^4.7.5",
     "wavesurfer.js": "^7.12.8"
   },
   "devDependencies": {

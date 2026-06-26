@@ -41,6 +41,8 @@ export default function HistoryDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [titleUpdate, setTitleUpdate] = useState<{ id: string; title: string; nonce: number }>({ id: '', title: '', nonce: 0 });
 
   useEffect(() => {
     if (!id) return;
@@ -86,13 +88,22 @@ export default function HistoryDetailsPage() {
 
       <SessionHistory
         onAddNew={handleBack}
+        refreshTrigger={refreshTrigger}
+        titleUpdate={titleUpdate}
         isMobileOpen={isSidebarOpen}
         onMobileClose={() => setIsSidebarOpen(false)}
       />
 
       {session?.status === 'summarized' && !loading && !error ? (
         <main className="flex-1 min-w-0 overflow-hidden" id="main-content">
-          <StudySheet data={session} onBack={handleBack} />
+          <StudySheet
+            data={session}
+            onBack={handleBack}
+            onTitleChange={(newTitle) => {
+              setSession(prev => prev ? { ...prev, title: newTitle } : prev);
+              setTitleUpdate({ id: session._id, title: newTitle, nonce: Date.now() });
+            }}
+          />
         </main>
       ) : (
         <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-4 sm:px-10 py-6 sm:py-10 pb-16 relative" id="main-content">
@@ -127,8 +138,8 @@ export default function HistoryDetailsPage() {
                 audioUrl={getAudioUrl(session._id)}
                 words={session.words}
                 errorMessage="هذه المحاضرة لم تكتمل بعد"
-                onRetry={(fromStep) => {
-                  router.push(`/?resume=${session._id}&step=${fromStep}`);
+                onRetry={() => {
+                  router.push(`/?resume=${session._id}&step=resume`);
                 }}
                 onReset={handleBack}
               />

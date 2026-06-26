@@ -40,6 +40,7 @@ interface SessionHistoryProps {
   refreshTrigger?: number;
   isMobileOpen?: boolean;
   onMobileClose?: () => void;
+  titleUpdate?: { id: string; title: string; nonce: number };
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -62,7 +63,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export default function SessionHistory({ onSelect, onAddNew, refreshTrigger = 0, isMobileOpen = false, onMobileClose }: SessionHistoryProps) {
+export default function SessionHistory({ onSelect, onAddNew, refreshTrigger = 0, isMobileOpen = false, onMobileClose, titleUpdate }: SessionHistoryProps) {
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -84,6 +85,11 @@ export default function SessionHistory({ onSelect, onAddNew, refreshTrigger = 0,
   useEffect(() => {
     loadSessions();
   }, [loadSessions, refreshTrigger]);
+
+  useEffect(() => {
+    if (!titleUpdate || titleUpdate.nonce === 0) return;
+    setSessions(prev => prev.map(s => s._id === titleUpdate.id ? { ...s, title: titleUpdate.title } : s));
+  }, [titleUpdate]);
 
   const handleArchive = useCallback(async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
@@ -118,12 +124,12 @@ export default function SessionHistory({ onSelect, onAddNew, refreshTrigger = 0,
 
       <aside
         className={`
-          w-full sm:w-[300px] sm:min-w-[300px] h-full bg-[#161616] border-l border-white/[0.08] p-4 sm:p-5 flex flex-col overflow-y-auto no-print shrink-0
+          w-full sm:w-[300px] sm:min-w-[300px] h-full bg-[#161616] border-l border-white/[0.08] flex flex-col overflow-hidden no-print shrink-0
           fixed sm:static inset-y-0 right-0 z-50 transition-transform duration-300 sm:transition-none
           ${isMobileOpen ? 'translate-x-0' : 'translate-x-full sm:translate-x-0'}
         `}
       >
-      <div className="flex items-center justify-between mb-5 pb-3 border-b border-[#FF9800]/15 gap-2">
+      <div className="flex items-center justify-between p-4 sm:p-5 pb-3 border-b border-[#FF9800]/15 gap-2 shrink-0">
         <h2 className="flex items-center gap-2 text-[1.05rem] font-semibold text-[#FF9800] whitespace-nowrap shrink-0">
           {/* <IconFile size={18} /> */}
           {showArchived ? 'المؤرشفة' : 'المحاضرات السابقة'}
@@ -142,7 +148,6 @@ export default function SessionHistory({ onSelect, onAddNew, refreshTrigger = 0,
               onClick={handleAddNewAndClose}
               data-tooltip-id="session-action-tooltip"
               data-tooltip-content="إضافة محاضرة جديدة"
-              data-tooltip-place="bottom"
               className="flex items-center justify-center w-8 h-8 rounded-[8px] text-[#808080] border border-white/10 hover:text-[#FF9800] hover:border-[#FF9800]/25 hover:bg-[#FF9800]/10 transition-all cursor-pointer"
             >
               <IconPlus size={16} />
@@ -152,7 +157,6 @@ export default function SessionHistory({ onSelect, onAddNew, refreshTrigger = 0,
             onClick={() => setShowArchived(v => !v)}
             data-tooltip-id="session-action-tooltip"
             data-tooltip-content={showArchived ? 'العودة' : 'المؤرشف'}
-            data-tooltip-place="bottom"
             className={`flex items-center justify-center w-8 h-8 rounded-[8px] border transition-all cursor-pointer ${showArchived ? 'text-[#FF9800] border-[#FF9800]/25 bg-[#FF9800]/10' : 'text-[#808080] border-white/10 hover:text-[#B0B0B0] hover:border-white/20'}`}
           >
             <IconArchive size={16} />
@@ -160,6 +164,7 @@ export default function SessionHistory({ onSelect, onAddNew, refreshTrigger = 0,
         </div>
       </div>
 
+      <div className="flex-1 overflow-y-auto p-4 sm:p-5 pt-3">
       {isLoading && <div className="text-center text-[#808080] text-sm py-8 animate-pulse">جارٍ التحميل...</div>}
       {!isLoading && sessions.length === 0 && <div className="text-center text-[#808080] text-sm py-8">لا توجد محاضرات بعد</div>}
 
@@ -196,9 +201,8 @@ export default function SessionHistory({ onSelect, onAddNew, refreshTrigger = 0,
                 </div>
                 <button
                   onClick={(e) => handleArchive(e, s._id)}
-                  data-tooltip-id="session-action-tooltip"
+                  data-tooltip-id="session-item-action-tooltip"
                   data-tooltip-content={showArchived ? 'إلغاء الأرشفة' : 'أرشفة'}
-                  data-tooltip-place="top"
                   className="flex items-center justify-center w-7 h-7 min-w-7 rounded-[8px] text-[#808080] hover:text-[#FF9800] hover:bg-[#FF9800]/10 transition-all cursor-pointer opacity-0 group-hover:opacity-100"
                 >
                   <IconArchive size={15} />
@@ -224,6 +228,7 @@ export default function SessionHistory({ onSelect, onAddNew, refreshTrigger = 0,
           })}
         </ul>
       )}
+      </div>
 
       <Tooltip
         id="session-item-tooltip"
@@ -242,6 +247,20 @@ export default function SessionHistory({ onSelect, onAddNew, refreshTrigger = 0,
       />
       <Tooltip
         id="session-action-tooltip"
+        place="bottom"
+        variant="dark"
+        style={{
+          backgroundColor: '#1a1a1a',
+          border: '1px solid rgba(255,152,0,0.25)',
+          borderRadius: '10px',
+          fontSize: '0.72rem',
+          padding: '4px 10px',
+          color: '#E0E0E0',
+          zIndex: 9999,
+        }}
+      />
+      <Tooltip
+        id="session-item-action-tooltip"
         place="top"
         variant="dark"
         style={{

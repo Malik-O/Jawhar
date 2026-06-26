@@ -8,13 +8,12 @@ import StudySheet from './components/StudySheet';
 import SessionHistory from './components/SessionHistory';
 import { IconMenu } from './components/Icons';
 import { useProcessor } from './hooks/useUpload';
-import { fetchSession, getAudioUrl } from './services/api';
+import { getAudioUrl } from './services/api';
 import { SessionData } from './types/session';
 
 /**
  * Maps a session DB status/failedAt to the exact pipeline step key
- * that needs to run next. Used to highlight completed steps and
- * pass the resume target to resumeSession().
+ * that needs to run next. Used to highlight completed steps.
  */
 function getNextStep(session: SessionData): string {
   if (session.failedAt) {
@@ -40,8 +39,10 @@ export default function Home() {
   const [viewingSession, setViewingSession] = useState<SessionData | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [titleUpdate, setTitleUpdate] = useState<{ id: string; title: string; nonce: number }>({ id: '', title: '', nonce: 0 });
   const router = useRouter();
   const resumeAttempted = useRef(false);
+  const reconnectAttempted = useRef(false);
 
   useEffect(() => {
     if (isSidebarOpen) {
@@ -52,30 +53,34 @@ export default function Home() {
     return () => document.body.classList.remove('drawer-open');
   }, [isSidebarOpen]);
 
+  /* ── on page load: reconnect to active session if one exists (e.g. after reload) ── */
+  useEffect(() => {
+    if (reconnectAttempted.current) return;
+    reconnectAttempted.current = true;
+    processor.checkAndReconnect();
+  }, [processor]);
+
   /* ── resume from query params (coming from history page) ── */
   useEffect(() => {
     if (resumeAttempted.current) return;
     const params = new URLSearchParams(window.location.search);
     const resumeId = params.get('resume');
     const resumeStep = params.get('step');
-    if (!resumeId || !resumeStep) return;
+    if (!resumeId) return;
 
     resumeAttempted.current = true;
     router.replace('/');
 
-    fetchSession(resumeId).then((session) => {
-      processor.resumeSession(resumeId, resumeStep, {
-        transcript: session.transcript,
-        title:      session.title,
-        summary:    session.summary,
-        keyPoints:  session.keyPoints,
-        quranVerses: session.quranVerses,
-        words:      session.words,
-      }).then(() => {
-        setRefreshTrigger(p => p + 1);
-      });
+    // Use reconnectSession to rejoin the socket room and show current state
+    processor.reconnectSession(resumeId).then(() => {
+      // If there's a step to resume from, trigger resume
+      if (resumeStep) {
+        processor.resumeSession(resumeId).then(() => {
+          setRefreshTrigger(p => p + 1);
+        });
+      }
     }).catch(() => {
-      console.error('Failed to resume session');
+      console.error('Failed to reconnect session');
     });
   }, [router, processor]);
 
@@ -93,12 +98,8 @@ export default function Home() {
   /* ── file upload flow ──────────────────────────────── */
   const handleFileSelected = useCallback((file: File) => {
     setViewingSession(null);
-    processor.startProcessing(file).then(() => {
-      setRefreshTrigger(p => p + 1);
-    });
+    processor.startProcessing(file);
   }, [processor]);
-
-  /* ── select session from history ──────────────────── */
 
   /* ── back / reset ──────────────────────────────────── */
   const handleBack = useCallback(() => {
@@ -107,42 +108,28 @@ export default function Home() {
     setRefreshTrigger(p => p + 1);
   }, [processor]);
 
-  /* ── view full sheet after processing finishes ─────── */
-  const handleViewSheet = useCallback(async () => {
-    if (!processor.sessionId) return;
-    const session = await fetchSession(processor.sessionId);
-    setViewingSession(session);
-    processor.reset();
-  }, [processor]);
-
-  /* ── auto-transition to StudySheet when steps finish ── */
+  /* ── redirect to history item page when steps finish ── */
   const doneHandled = useRef(false);
   useEffect(() => {
     if (processor.step === 'done' && processor.sessionId && !doneHandled.current) {
       doneHandled.current = true;
-      handleViewSheet();
+      router.push(`/history/${processor.sessionId}`);
+      processor.reset();
     }
     if (processor.step !== 'done') {
       doneHandled.current = false;
     }
-  }, [processor.step, processor.sessionId, handleViewSheet]);
+  }, [processor.step, processor.sessionId, router, processor]);
 
   /**
    * Resume an incomplete session directly from the session object.
-   * Passes the session ID immediately to avoid stale-closure issues.
+   * Now just calls resumeSession with the ID — backend handles the rest.
    */
-  const handleResume = useCallback((fromStep: string) => {
+  const handleResume = useCallback(() => {
     if (!viewingSession) return;
     const session = viewingSession;
-    setViewingSession(null); // hide incomplete view, show live processing
-    processor.resumeSession(session._id, fromStep, {
-      transcript: session.transcript,
-      title:      session.title,
-      summary:    session.summary,
-      keyPoints:  session.keyPoints,
-      quranVerses: session.quranVerses,
-      words:      session.words,
-    }).then(() => {
+    setViewingSession(null);
+    processor.resumeSession(session._id).then(() => {
       setRefreshTrigger(p => p + 1);
     });
   }, [viewingSession, processor]);
@@ -172,6 +159,7 @@ export default function Home() {
 
       <SessionHistory
         refreshTrigger={refreshTrigger}
+        titleUpdate={titleUpdate}
         onAddNew={handleBack}
         isMobileOpen={isSidebarOpen}
         onMobileClose={() => setIsSidebarOpen(false)}
@@ -180,7 +168,14 @@ export default function Home() {
       {/* 1. Completed session — full-height study sheet (no header, no padding) */}
       {showSheet && viewingSession ? (
         <main className="flex-1 min-w-0 overflow-hidden" id="main-content">
-          <StudySheet data={viewingSession} onBack={handleBack} />
+          <StudySheet
+            data={viewingSession}
+            onBack={handleBack}
+            onTitleChange={(newTitle) => {
+              setViewingSession(prev => prev ? { ...prev, title: newTitle } : prev);
+              setTitleUpdate({ id: viewingSession._id, title: newTitle, nonce: Date.now() });
+            }}
+          />
         </main>
       ) : (
         <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-4 sm:px-10 py-6 sm:py-10 pb-16 relative" id="main-content">
@@ -232,16 +227,8 @@ export default function Home() {
               audioUrl={processor.sessionId ? getAudioUrl(processor.sessionId) : undefined}
               words={processor.words}
               errorMessage={processor.errorMessage}
-              onRetry={(fromStep) =>
-                processor.resumeSession(processor.sessionId, fromStep, {
-                  transcript: processor.transcript,
-                  title:      processor.title,
-                  summary:    processor.summary,
-                  keyPoints:  processor.keyPoints,
-                  quranVerses: processor.quranVerses,
-                  words:      processor.words,
-                })
-              }
+              progress={processor.progress}
+              onRetry={() => processor.resumeSession(processor.sessionId)}
               onReset={handleBack}
             />
 
