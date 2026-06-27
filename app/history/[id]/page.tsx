@@ -48,9 +48,11 @@ export default function HistoryDetailsPage() {
     if (!id) return;
     fetchSession(id)
       .then(setSession)
-      .catch(err => setError(err.message))
+      .catch(err => {
+        router.replace('/');
+      })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, router]);
 
   useEffect(() => {
     if (isSidebarOpen) {

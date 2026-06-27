@@ -102,11 +102,12 @@ function parseSpeakerSections(transcript: string): ParsedSpeakerSection[] {
 
 interface StudySheetProps {
   data: SessionData;
-  onBack: () => void;
+  onBack?: () => void;
   onTitleChange?: (title: string) => void;
+  isPublic?: boolean;
 }
 
-export default function StudySheet({ data, onBack, onTitleChange }: StudySheetProps) {
+export default function StudySheet({ data, onBack, onTitleChange, isPublic = false }: StudySheetProps) {
   const [activeTab, setActiveTab] = useState<'summary' | 'transcript' | 'audio'>('transcript');
   const [transcript, setTranscript] = useState(data.transcript);
   const [isSaving, setIsSaving] = useState(false);
@@ -179,14 +180,16 @@ export default function StudySheet({ data, onBack, onTitleChange }: StudySheetPr
       {/* ── Header bar ── */}
       <div className="flex items-center justify-between px-3 sm:px-5 py-3 sm:py-3.5 border-b border-white/[0.08] no-print shrink-0" id="study-header">
         <div className="flex items-center gap-2 sm:gap-3">
-          <button
-            className="flex items-center gap-1.5 px-3 sm:px-3.5 py-2 rounded-[10px] bg-transparent text-[#B0B0B0] border border-white/[0.08] hover:bg-white/[0.06] hover:text-[#E0E0E0] transition-all cursor-pointer text-sm"
-            onClick={onBack}
-            id="back-button"
-          >
-            <IconArrowRight size={16} />
-            <span className="hidden sm:inline">رجوع</span>
-          </button>
+          {onBack && (
+            <button
+              className="flex items-center gap-1.5 px-3 sm:px-3.5 py-2 rounded-[10px] bg-transparent text-[#B0B0B0] border border-white/[0.08] hover:bg-white/[0.06] hover:text-[#E0E0E0] transition-all cursor-pointer text-sm"
+              onClick={onBack}
+              id="back-button"
+            >
+              <IconArrowRight size={16} />
+              <span className="hidden sm:inline">رجوع</span>
+            </button>
+          )}
           <button
             className="ss-accent-btn flex items-center gap-1.5 px-3 sm:px-3.5 py-2 rounded-[10px] font-semibold border-none cursor-pointer text-sm"
             onClick={() => window.print()}
@@ -228,16 +231,16 @@ export default function StudySheet({ data, onBack, onTitleChange }: StudySheetPr
           />
         ) : (
           <h1
-            className="text-lg sm:text-2xl font-bold leading-relaxed text-right cursor-text hover:text-[#FFB74D] transition-colors"
+            className={`text-lg sm:text-2xl font-bold leading-relaxed text-right ${!isPublic ? 'cursor-text hover:text-[#FFB74D]' : ''} transition-colors`}
             dir="rtl"
-            onClick={() => setEditingTitle(true)}
-            title="اضغط للتعديل"
+            onClick={() => !isPublic && setEditingTitle(true)}
+            title={!isPublic ? "اضغط للتعديل" : ""}
           >
             {title}
           </h1>
         )}
         {summary && (
-          editingSummary ? (
+          editingSummary && !isPublic ? (
             <textarea
               value={summary}
               onChange={(e) => setSummary(e.target.value)}
@@ -248,10 +251,10 @@ export default function StudySheet({ data, onBack, onTitleChange }: StudySheetPr
             />
           ) : (
             <p
-              className="text-xs sm:text-sm text-[#808080] mt-1.5 text-right leading-relaxed cursor-text hover:text-[#B0B0B0] transition-colors"
+              className={`text-xs sm:text-sm text-[#808080] mt-1.5 text-right leading-relaxed ${!isPublic ? 'cursor-text hover:text-[#B0B0B0]' : ''} transition-colors`}
               dir="rtl"
-              onClick={() => setEditingSummary(true)}
-              title="اضغط للتعديل"
+              onClick={() => !isPublic && setEditingSummary(true)}
+              title={!isPublic ? "اضغط للتعديل" : ""}
             >
               {filterArabicOnly(summary)}
             </p>
@@ -292,7 +295,7 @@ export default function StudySheet({ data, onBack, onTitleChange }: StudySheetPr
                     <div className="leading-[2.2] text-[1.02rem] text-[#E0E0E0] text-right" dir="rtl">
                       <ParsedTranscript
                         text={section.text}
-                        editable={isLast}
+                        editable={!isPublic && isLast}
                         onTextChange={handleTranscriptSave}
                         quranVerses={data.quranVerses}
                       />
@@ -371,12 +374,14 @@ export default function StudySheet({ data, onBack, onTitleChange }: StudySheetPr
               label="الاستماع"
               icon={<IconHeadphones size={15} />}
             />
-            <RightPanelTab
-              active={rightPanelTab === 'notes'}
-              onClick={() => setRightPanelTab('notes')}
-              label="الملاحظات"
-              icon={<IconNote size={15} />}
-            />
+            {!isPublic && (
+              <RightPanelTab
+                active={rightPanelTab === 'notes'}
+                onClick={() => setRightPanelTab('notes')}
+                label="الملاحظات"
+                icon={<IconNote size={15} />}
+              />
+            )}
             {/* Mobile close button */}
             <button
               onClick={() => setIsMobilePanelOpen(false)}
@@ -398,7 +403,7 @@ export default function StudySheet({ data, onBack, onTitleChange }: StudySheetPr
                   )}
                 </div>
                 <AudioSyncPlayer
-                  audioUrl={getAudioUrl(data._id)}
+                  audioUrl={isPublic && data.publicKey ? `/api/sessions/public/${data.publicKey}/audio` : getAudioUrl(data._id)}
                   words={data.words}
                   duration={data.duration}
                 />

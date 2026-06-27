@@ -2,12 +2,31 @@ import { SessionData, SessionListItem, QuranVerse } from '../types/session';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
+async function getAuthHeaders(extraHeaders: HeadersInit = {}): Promise<HeadersInit> {
+  const headers: Record<string, string> = { ...extraHeaders } as Record<string, string>;
+  if (typeof window !== 'undefined' && (window as any).Clerk?.session) {
+    try {
+      const token = await (window as any).Clerk.session.getToken();
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+    } catch (e) {
+      console.error('Failed to get Clerk token', e);
+    }
+  }
+  return headers;
+}
+
 /** Step 1: Upload file and create session */
 export async function startSession(file: File): Promise<{ sessionId: string; originalFileName: string; fileType: string }> {
   const formData = new FormData();
   formData.append('file', file);
 
-  const res = await fetch(`${API_BASE}/api/sessions/start`, { method: 'POST', body: formData });
+  const res = await fetch(`${API_BASE}/api/sessions/start`, { 
+    method: 'POST', 
+    body: formData,
+    headers: await getAuthHeaders(),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'فشل رفع الملف');
@@ -17,7 +36,10 @@ export async function startSession(file: File): Promise<{ sessionId: string; ori
 
 /** Step 2: Extract audio */
 export async function extractAudio(sessionId: string): Promise<{ status: string; skipped: boolean }> {
-  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/extract`, { method: 'POST' });
+  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/extract`, { 
+    method: 'POST',
+    headers: await getAuthHeaders(),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'فشل استخراج الصوت');
@@ -27,7 +49,10 @@ export async function extractAudio(sessionId: string): Promise<{ status: string;
 
 /** Step 3: Transcribe with Groq Whisper */
 export async function transcribeAudio(sessionId: string): Promise<{ status: string; transcript: string }> {
-  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/transcribe`, { method: 'POST' });
+  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/transcribe`, { 
+    method: 'POST',
+    headers: await getAuthHeaders(),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'فشل تفريغ النص');
@@ -37,7 +62,10 @@ export async function transcribeAudio(sessionId: string): Promise<{ status: stri
 
 /** Step 4: Enrich Quran verses with Uthmani text & references */
 export async function enrichVerses(sessionId: string): Promise<{ status: string; quranVerses: QuranVerse[]; transcript: string }> {
-  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/enrich-verses`, { method: 'POST' });
+  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/enrich-verses`, { 
+    method: 'POST',
+    headers: await getAuthHeaders(),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'فشل استخراج الآيات');
@@ -47,7 +75,10 @@ export async function enrichVerses(sessionId: string): Promise<{ status: string;
 
 /** Step 5: Summarize with Gemini */
 export async function summarizeText(sessionId: string): Promise<{ status: string; title: string; summary: string; keyPoints: string[] }> {
-  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/summarize`, { method: 'POST' });
+  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/summarize`, { 
+    method: 'POST',
+    headers: await getAuthHeaders(),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'فشل التلخيص');
@@ -57,7 +88,10 @@ export async function summarizeText(sessionId: string): Promise<{ status: string
 
 /** Start autonomous processing (fire-and-forget — backend runs full pipeline) */
 export async function startProcessing(sessionId: string): Promise<{ sessionId: string; status: string }> {
-  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/process`, { method: 'POST' });
+  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/process`, { 
+    method: 'POST',
+    headers: await getAuthHeaders(),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'فشل بدء المعالجة');
@@ -67,7 +101,10 @@ export async function startProcessing(sessionId: string): Promise<{ sessionId: s
 
 /** Stop/cancel active processing */
 export async function stopProcessing(sessionId: string): Promise<{ sessionId: string; status: string }> {
-  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/stop`, { method: 'POST' });
+  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/stop`, { 
+    method: 'POST',
+    headers: await getAuthHeaders(),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'فشل إيقاف المعالجة');
@@ -77,14 +114,18 @@ export async function stopProcessing(sessionId: string): Promise<{ sessionId: st
 
 /** Check if session is currently processing and its status */
 export async function getSessionStatus(sessionId: string): Promise<{ sessionId: string; processing: boolean; status: string; failedAt: string }> {
-  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/status`);
+  const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/status`, {
+    headers: await getAuthHeaders(),
+  });
   if (!res.ok) throw new Error('Failed to get session status');
   return res.json();
 }
 
 /** Fetch all sessions (pass archived=true to get archived ones) */
 export async function fetchSessions(archived = false): Promise<SessionListItem[]> {
-  const res = await fetch(`${API_BASE}/api/sessions?archived=${archived}`);
+  const res = await fetch(`${API_BASE}/api/sessions?archived=${archived}`, {
+    headers: await getAuthHeaders(),
+  });
   if (!res.ok) throw new Error('Failed to fetch sessions');
   return res.json();
 }
@@ -93,7 +134,7 @@ export async function fetchSessions(archived = false): Promise<SessionListItem[]
 export async function archiveSession(id: string, archived: boolean): Promise<void> {
   const res = await fetch(`${API_BASE}/api/sessions/${id}/archive`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ archived }),
   });
   if (!res.ok) throw new Error('Failed to archive session');
@@ -101,22 +142,43 @@ export async function archiveSession(id: string, archived: boolean): Promise<voi
 
 /** Fetch a single session */
 export async function fetchSession(id: string): Promise<SessionData> {
-  const res = await fetch(`${API_BASE}/api/sessions/${id}`);
+  const res = await fetch(`${API_BASE}/api/sessions/${id}`, {
+    headers: await getAuthHeaders(),
+  });
   if (!res.ok) throw new Error('Session not found');
   return res.json();
 }
 
 /** Delete a session */
 export async function deleteSession(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/sessions/${id}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE}/api/sessions/${id}`, { 
+    method: 'DELETE',
+    headers: await getAuthHeaders(),
+  });
   if (!res.ok) throw new Error('Failed to delete session');
+}
+
+/** Fetch a public session by key */
+export async function fetchSessionPublic(key: string): Promise<SessionData> {
+  const res = await fetch(`${API_BASE}/api/sessions/public/${key}`);
+  if (!res.ok) throw new Error('Session not found');
+  return res.json();
+}
+
+/** Fetch sidebar grouped data */
+export async function fetchSidebarData(): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/sidebar-data`, {
+    headers: await getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to fetch sidebar data');
+  return res.json();
 }
 
 /** Update transcript text */
 export async function updateTranscript(id: string, transcript: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/sessions/${id}/transcript`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ transcript }),
   });
   if (!res.ok) throw new Error('Failed to update transcript');
@@ -126,7 +188,7 @@ export async function updateTranscript(id: string, transcript: string): Promise<
 export async function updateSessionMetadata(id: string, metadata: { title?: string; summary?: string }): Promise<void> {
   const res = await fetch(`${API_BASE}/api/sessions/${id}/metadata`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(metadata),
   });
   if (!res.ok) throw new Error('Failed to update metadata');

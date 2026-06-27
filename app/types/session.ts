@@ -30,6 +30,7 @@ export interface SessionData {
   keyPoints: string[];
   quranVerses: QuranVerse[];
   duration: number;
+  publicKey?: string;
   createdAt: string;
 }
 
@@ -42,6 +43,9 @@ export interface SessionListItem {
   failedAt: string;
   duration: number;
   archived: boolean;
+  lectureId?: string;
+  courseId?: string | null;
+  publicKey?: string;
   createdAt: string;
 }
 
