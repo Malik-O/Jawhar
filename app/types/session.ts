@@ -31,6 +31,7 @@ export interface SessionData {
   quranVerses: QuranVerse[];
   duration: number;
   publicKey?: string;
+  visibility: 'public' | 'private' | 'unlisted';
   createdAt: string;
 }
 
@@ -46,6 +47,7 @@ export interface SessionListItem {
   lectureId?: string;
   courseId?: string | null;
   publicKey?: string;
+  visibility: 'public' | 'private' | 'unlisted';
   createdAt: string;
 }
 

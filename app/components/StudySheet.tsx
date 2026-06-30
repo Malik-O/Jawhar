@@ -6,8 +6,10 @@ import {
   IconPrinter, IconArrowRight, IconFile, IconClock,
   IconText, IconList, IconHeadphones, IconUser,
   IconNote, IconBookmark, IconUsers, IconDownload, IconX,
+  IconSettings,
 } from './Icons';
 import ParsedTranscript from './ParsedTranscript';
+import SessionSettingsModal from './SessionSettingsModal';
 import AudioSyncPlayer from './AudioSyncPlayer';
 import { getAudioUrl, getPublicAudioUrl, updateTranscript, updateSessionMetadata } from '../services/api';
 import { formatDuration } from '../utils/formatDuration';
@@ -107,7 +109,8 @@ interface StudySheetProps {
   isPublic?: boolean;
 }
 
-export default function StudySheet({ data, onBack, onTitleChange, isPublic = false }: StudySheetProps) {
+export default function StudySheet({ data: initialData, onBack, onTitleChange, isPublic = false }: StudySheetProps) {
+  const [data, setData] = useState<SessionData>(initialData);
   const [activeTab, setActiveTab] = useState<'summary' | 'transcript' | 'audio'>('transcript');
   const [transcript, setTranscript] = useState(data.transcript);
   const [isSaving, setIsSaving] = useState(false);
@@ -118,6 +121,7 @@ export default function StudySheet({ data, onBack, onTitleChange, isPublic = fal
   const [summary, setSummary] = useState(data.summary || '');
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingSummary, setEditingSummary] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const formattedDate = new Date(data.createdAt).toLocaleDateString('ar-EG', {
     year: 'numeric',
@@ -206,9 +210,15 @@ export default function StudySheet({ data, onBack, onTitleChange, isPublic = fal
             <span className="text-white/10">|</span>
             <span className="flex items-center gap-1 truncate max-w-[150px]"><IconFile size={13} /> {data.originalFileName}</span>
           </div>
-          <div className="hidden sm:flex w-8 h-8 rounded-full bg-white/[0.06] border border-white/[0.1] items-center justify-center text-[#808080] hover:text-[#FF9800] hover:border-[#FF9800]/30 transition-all cursor-pointer">
-            <IconUser size={16} />
-          </div>
+          {!isPublic && (
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="flex w-8 h-8 rounded-[10px] bg-white/[0.06] border border-white/[0.1] items-center justify-center text-[#808080] hover:text-[#FF9800] hover:border-[#FF9800]/30 transition-all cursor-pointer"
+              title="الإعدادات"
+            >
+              <IconSettings size={16} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -511,6 +521,17 @@ export default function StudySheet({ data, onBack, onTitleChange, isPublic = fal
           </div>
         </div>
       </div>
+      
+      {!isPublic && (
+        <SessionSettingsModal 
+          session={data}
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          onUpdate={(visibility) => {
+            setData(prev => ({ ...prev, visibility }));
+          }}
+        />
+      )}
     </div>
   );
 }

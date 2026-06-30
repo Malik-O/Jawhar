@@ -194,6 +194,16 @@ export async function updateSessionMetadata(id: string, metadata: { title?: stri
   if (!res.ok) throw new Error('Failed to update metadata');
 }
 
+/** Update session visibility */
+export async function updateSessionVisibility(id: string, visibility: 'public' | 'private' | 'unlisted'): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/sessions/${id}/visibility`, {
+    method: 'PATCH',
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ visibility }),
+  });
+  if (!res.ok) throw new Error('Failed to update visibility');
+}
+
 /** Get audio stream URL for a session */
 export function getAudioUrl(id: string): string {
   return `${API_BASE}/api/sessions/${id}/audio`;

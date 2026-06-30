@@ -2,7 +2,6 @@
 
 import { useAuth } from '@clerk/nextjs';
 import { PlatformUser } from '@/app/types/platform';
-import { requestSheikh, getMe } from '@/app/services/platformApi';
 import Link from 'next/link';
 
 interface SidebarInfoProps {
@@ -14,20 +13,7 @@ interface SidebarInfoProps {
 export default function SidebarInfo({ user, onUserUpdate, setMessage }: SidebarInfoProps) {
   const { getToken } = useAuth();
 
-  const handleRequestSheikh = async () => {
-    if (!confirm('هل أنت متأكد من تقديم طلب الاعتماد كشيخ؟')) return;
-    try {
-      const token = await getToken();
-      if (!token) throw new Error('No token');
-      await requestSheikh(token);
-      setMessage({ text: 'تم ترقية الحساب إلى شيخ بنجاح', type: 'success' });
-      // Refresh user to get updated status
-      const data = await getMe(token);
-      onUserUpdate(data);
-    } catch (err: any) {
-      setMessage({ text: err.message || 'حدث خطأ في تقديم الطلب', type: 'error' });
-    }
-  };
+
 
   return (
     <div className="space-y-6">
@@ -49,18 +35,7 @@ export default function SidebarInfo({ user, onUserUpdate, setMessage }: SidebarI
         </div>
       </div>
 
-      {user.role === 'student' && (
-        <div className="bg-[#161616] border border-white/10 rounded-2xl p-6">
-          <h3 className="font-semibold text-[#E0E0E0] mb-2">ترقية الحساب</h3>
-          <p className="text-sm text-[#808080] mb-4">ترقية الحساب إلى شيخ تتيح لك إنشاء دورات ونشر محاضرات.</p>
-          <button
-            onClick={handleRequestSheikh}
-            className="w-full px-4 py-2 border border-[#FF9800]/50 text-[#FF9800] hover:bg-[#FF9800]/10 rounded-lg transition-colors text-sm font-semibold"
-          >
-            ترقية إلى شيخ
-          </button>
-        </div>
-      )}
+
 
       {user.role === 'sheikh' && (
         <div className="bg-[#161616] border border-white/10 rounded-2xl p-6">

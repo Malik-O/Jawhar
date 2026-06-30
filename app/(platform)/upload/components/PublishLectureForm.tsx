@@ -19,27 +19,9 @@ export default function PublishLectureForm({ sessionId, defaultTitle, onPublishe
 
   const [title, setTitle] = useState(defaultTitle || '');
   const [description, setDescription] = useState('');
-  const [courseId, setCourseId] = useState('');
-  
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    async function loadCourses() {
-      if (!userId) return;
-      try {
-        const { courses: myCourses } = await getCourses({ sheikhId: userId });
-        setCourses(myCourses);
-      } catch (err) {
-        console.error('Failed to load courses', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadCourses();
-  }, [userId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,7 +38,6 @@ export default function PublishLectureForm({ sessionId, defaultTitle, onPublishe
       if (!token) throw new Error('No token');
 
       const data: any = { sessionId, title, description };
-      if (courseId) data.courseId = courseId;
 
       await createLecture(token, data);
       onPublished();
@@ -89,28 +70,7 @@ export default function PublishLectureForm({ sessionId, defaultTitle, onPublishe
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-[#E0E0E0] mb-2">إضافة إلى دورة</label>
-          {loading ? (
-            <div className="text-sm text-[#808080]">جاري تحميل دوراتك...</div>
-          ) : courses.length > 0 ? (
-            <select
-              value={courseId}
-              onChange={(e) => setCourseId(e.target.value)}
-              className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-4 py-3 text-[#E0E0E0] focus:border-[#FF9800]/50 focus:outline-none transition-colors appearance-none"
-            >
-              <option value="">بدون دورة (محاضرة مستقلة)</option>
-              {courses.map(course => (
-                <option key={course._id as string} value={course._id as string}>{course.title}</option>
-              ))}
-            </select>
-          ) : (
-            <div className="text-sm text-[#808080]">
-              ليس لديك أي دورات مسجلة.{' '}
-              <Link href="/courses/new" className="text-[#FF9800] hover:underline" target="_blank">أنشئ دورة جديدة</Link>
-            </div>
-          )}
-        </div>
+
 
         <div>
           <label className="block text-sm font-medium text-[#E0E0E0] mb-2">وصف المحاضرة (اختياري)</label>
