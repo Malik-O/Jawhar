@@ -61,11 +61,11 @@ export default function PublicLecturePage() {
           transcript: lecture.session?.transcript || '',
           keyPoints: lecture.session?.keyPoints || [],
           quranVerses: lecture.session?.quranVerses || [],
-          words: [],
-          rawTranscript: '',
-          speakerSegments: [],
+          words: lecture.session?.words || [],
+          rawTranscript: lecture.session?.rawTranscript || '',
+          speakerSegments: lecture.session?.speakerSegments || [],
           failedAt: '',
-          publicKey: lecture.publicKey,
+          publicKey: lecture.session?.publicKey,
         }}
         isPublic={true}
       />

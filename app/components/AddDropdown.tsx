@@ -47,7 +47,7 @@ export default function AddDropdown({ onAddLecture }: AddDropdownProps) {
           </button>
           
           <Link
-            href="/course/new"
+            href="/courses/new"
             onClick={() => setIsOpen(false)}
             className="w-full flex items-center gap-3 px-3 py-2.5 text-[0.85rem] text-[#E0E0E0] hover:bg-[#FF9800]/[0.08] hover:text-[#FF9800] transition-colors text-right"
           >

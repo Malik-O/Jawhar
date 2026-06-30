@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
+import { useAuth } from '@clerk/nextjs';
 import { IconSkipBack10, IconSkipForward10 } from './Icons';
 import { filterArabicOnly } from '../utils/arabicFilter';
 
@@ -48,44 +49,66 @@ export default function AudioSyncPlayer({ audioUrl, words, duration }: AudioSync
   const [hoverX, setHoverX] = useState<number | null>(null);
   const shouldAutoScrollRef = useRef(false);
 
+  const { getToken } = useAuth();
+
   /* ── Initialize WaveSurfer ── */
   useEffect(() => {
-    if (!containerRef.current || !audioUrl) return;
+    let ws: WaveSurfer | null = null;
+    let isCancelled = false;
 
-    const ws = WaveSurfer.create({
-      container: containerRef.current,
-      waveColor: 'rgba(255,255,255,0.1)',
-      progressColor: '#FF9800',
-      cursorColor: 'rgba(255,152,0,0.6)',
-      cursorWidth: 2,
-      barWidth: 3,
-      barGap: 2,
-      barRadius: 2,
-      height: 64,
-      normalize: true,
-      url: audioUrl,
-    });
+    async function initWs() {
+      if (!containerRef.current || !audioUrl) return;
 
-    wavesurferRef.current = ws;
+      const token = await getToken().catch(() => null);
+      if (isCancelled) return;
 
-    ws.on('ready', () => {
-      setIsReady(true);
-      setAudioDuration(ws.getDuration());
-    });
+      ws = WaveSurfer.create({
+        container: containerRef.current!,
+        waveColor: 'rgba(255,255,255,0.1)',
+        progressColor: '#FF9800',
+        cursorColor: 'rgba(255,152,0,0.6)',
+        cursorWidth: 2,
+        barWidth: 3,
+        barGap: 2,
+        barRadius: 2,
+        height: 64,
+        normalize: true,
+        url: audioUrl,
+        fetchParams: token ? {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        } : undefined
+      });
 
-    ws.on('timeupdate', (time) => {
-      setCurrentTime(time);
-    });
+      wavesurferRef.current = ws;
 
-    ws.on('play', () => setIsPlaying(true));
-    ws.on('pause', () => setIsPlaying(false));
-    ws.on('finish', () => setIsPlaying(false));
+      ws.on('ready', () => {
+        if (isCancelled) return;
+        setIsReady(true);
+        setAudioDuration(ws!.getDuration());
+      });
+
+      ws.on('timeupdate', (time) => {
+        if (isCancelled) return;
+        setCurrentTime(time);
+      });
+
+      ws.on('play', () => { if (!isCancelled) setIsPlaying(true) });
+      ws.on('pause', () => { if (!isCancelled) setIsPlaying(false) });
+      ws.on('finish', () => { if (!isCancelled) setIsPlaying(false) });
+    }
+
+    initWs();
 
     return () => {
-      ws.destroy();
+      isCancelled = true;
+      if (ws) {
+        ws.destroy();
+      }
       wavesurferRef.current = null;
     };
-  }, [audioUrl]);
+  }, [audioUrl, getToken]);
 
   const togglePlay = useCallback(() => {
     const ws = wavesurferRef.current;

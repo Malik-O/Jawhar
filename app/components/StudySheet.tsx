@@ -9,7 +9,7 @@ import {
 } from './Icons';
 import ParsedTranscript from './ParsedTranscript';
 import AudioSyncPlayer from './AudioSyncPlayer';
-import { getAudioUrl, updateTranscript, updateSessionMetadata } from '../services/api';
+import { getAudioUrl, getPublicAudioUrl, updateTranscript, updateSessionMetadata } from '../services/api';
 import { formatDuration } from '../utils/formatDuration';
 import { filterArabicOnly } from '../utils/arabicFilter';
 
@@ -275,6 +275,8 @@ export default function StudySheet({ data, onBack, onTitleChange, isPublic = fal
           {transcript ? (
             (() => {
               const sections = parseSpeakerSections(transcript);
+              const uniqueSpeakers = new Set(sections.map(s => s.speaker)).size;
+              const isSingleSpeaker = uniqueSpeakers === 1;
               return sections.map((section, idx) => {
                 const segData = data.speakerSegments?.find(s => s.speaker === section.speaker);
                 const color = getSpeakerColor(section.speaker);
@@ -284,6 +286,23 @@ export default function StudySheet({ data, onBack, onTitleChange, isPublic = fal
                   ? formatTimeRange(segData.start, segData.end)
                   : '';
                 const isLast = idx === sections.length - 1;
+
+                if (isSingleSpeaker) {
+                  return (
+                    <div key={idx} className="mb-4 text-right" dir="rtl">
+                      <div className="leading-[2.2] text-[1.02rem] text-[#E0E0E0]">
+                        <ParsedTranscript
+                          text={section.text}
+                          editable={!isPublic && isLast}
+                          onTextChange={handleTranscriptSave}
+                          quranVerses={data.quranVerses}
+                          hideCorrections={isPublic}
+                        />
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <SpeakerBlock
                     key={idx}
@@ -298,6 +317,7 @@ export default function StudySheet({ data, onBack, onTitleChange, isPublic = fal
                         editable={!isPublic && isLast}
                         onTextChange={handleTranscriptSave}
                         quranVerses={data.quranVerses}
+                        hideCorrections={isPublic}
                       />
                     </div>
                   </SpeakerBlock>
@@ -403,7 +423,7 @@ export default function StudySheet({ data, onBack, onTitleChange, isPublic = fal
                   )}
                 </div>
                 <AudioSyncPlayer
-                  audioUrl={isPublic && data.publicKey ? `/api/sessions/public/${data.publicKey}/audio` : getAudioUrl(data._id)}
+                  audioUrl={isPublic && data.publicKey ? getPublicAudioUrl(data.publicKey) : getAudioUrl(data._id)}
                   words={data.words}
                   duration={data.duration}
                 />

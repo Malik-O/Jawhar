@@ -78,9 +78,10 @@ interface ParsedTranscriptProps {
   editable?: boolean;
   onTextChange?: (newText: string) => void;
   quranVerses?: QuranVerse[];
+  hideCorrections?: boolean;
 }
 
-export default function ParsedTranscript({ text, editable, onTextChange, quranVerses }: ParsedTranscriptProps) {
+export default function ParsedTranscript({ text, editable, onTextChange, quranVerses, hideCorrections }: ParsedTranscriptProps) {
   const [isEditing, setIsEditing] = useState(false);
 
   if (!text) return null;
@@ -120,6 +121,9 @@ export default function ParsedTranscript({ text, editable, onTextChange, quranVe
 
           const fixMatch = part.match(/<fix\b[^>]*original=["']?([^"'>]*)["']?[^>]*>([\s\S]*?)<\/fix>/i);
           if (fixMatch) {
+            if (hideCorrections) {
+              return <span key={i}>{fixMatch[2]}</span>;
+            }
             return <FixTag key={i} original={fixMatch[1]} fixed={fixMatch[2]} />;
           }
 

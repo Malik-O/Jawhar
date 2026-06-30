@@ -8,14 +8,22 @@ import { useUserRole } from '../hooks/useUserRole';
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { isAdmin } = useUserRole();
+  const { isAdmin, isSheikh } = useUserRole();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const links = [
+  const studentLinks = [
     { href: '/', label: 'اكتشاف' },
     { href: '/my-courses', label: 'دوراتي' },
     { href: '/profile', label: 'ملفي' },
   ];
+
+  const sheikhLinks = [
+    { href: '/', label: 'مساحة العمل' },
+    { href: '/upload', label: 'رفع محاضرة' },
+    { href: '/profile', label: 'ملفي' },
+  ];
+
+  const links = isSheikh ? sheikhLinks : studentLinks;
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';

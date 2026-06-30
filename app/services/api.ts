@@ -198,3 +198,8 @@ export async function updateSessionMetadata(id: string, metadata: { title?: stri
 export function getAudioUrl(id: string): string {
   return `${API_BASE}/api/sessions/${id}/audio`;
 }
+
+/** Get public audio stream URL for a session by key */
+export function getPublicAudioUrl(key: string): string {
+  return `${API_BASE}/api/sessions/public/${key}/audio`;
+}

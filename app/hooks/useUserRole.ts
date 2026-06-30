@@ -59,7 +59,7 @@ export function useUserRole() {
   }, [isLoaded, isSignedIn, fetchMe]);
 
   const role: UserRole = user?.role || 'student';
-  const isSheikh = role === 'sheikh' && user?.sheikhStatus === 'approved';
+  const isSheikh = role === 'sheikh';
   const isAdmin = role === 'super_admin';
 
   return { user, role, isSheikh, isAdmin, loading, syncUser, refresh: fetchMe };
